@@ -38,7 +38,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
 
       - name: Scan the git history for secrets
-        run: "$RUNNER_TEMP/gitleaks" git --redact --no-banner .
+        run: $RUNNER_TEMP/gitleaks git --redact --no-banner .
 
       - name: Install dependencies
         run: npm ci
@@ -56,4 +56,4 @@ jobs:
         run: npx expo export --platform android --output-dir "$RUNNER_TEMP/export"
 
       - name: Scan the Android bundle for secrets
-        run: "$RUNNER_TEMP/gitleaks" dir --redact --no-banner "$RUNNER_TEMP/export"
+        run: $RUNNER_TEMP/gitleaks dir --redact --no-banner "$RUNNER_TEMP/export"
