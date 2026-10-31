@@ -15,6 +15,7 @@ export const tasksCacheKey = 'live.tasks';
 export const slowAfterMs = 10_000;
 export const updatedShowMs = 3_000;
 export const cachedTasksMax = 200;
+export const reloadDelayMs = 500;
 const topics: Topic[] = ['tasks'];
 
 const CachedTasks = z.object({ items: z.array(TaskListItemV1), lastSeq: z.int().nonnegative() });
@@ -122,13 +123,31 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       if (mine === run.current) setSnapshot('error');
     }
   };
+  const reloads = useRef<{ timer?: ReturnType<typeof setTimeout>; running: boolean; again: boolean }>({ running: false, again: false });
+  const reload = () => {
+    const state = reloads.current;
+    if (state.running) state.again = true;
+    if (state.running || state.timer) return;
+    state.timer = setTimeout(() => {
+      state.timer = undefined;
+      state.running = true;
+      void load().finally(() => {
+        state.running = false;
+        if (!state.again) return;
+        state.again = false;
+        reload();
+      });
+    }, reloadDelayMs);
+  };
   const loadSnapshot = useEffectEvent(() => void load());
+  const reloadSnapshot = useEffectEvent(reload);
   const authLost = useEffectEvent((reason: AuthLost) => void session.signOut(reason === 'refused' ? 'refused' : undefined).catch(() => {}));
 
   useEffect(() => {
     run.current += 1;
     const mine = run.current;
     const pending = timers.current;
+    const reloadState = reloads.current;
     if (session.status !== 'signedIn') {
       if (session.status === 'signedOut') void removeItem(tasksCacheKey).catch(() => {});
       return;
@@ -156,7 +175,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           },
           onResync: () => {
             dispatch({ type: 'resync' });
-            loadSnapshot();
+            reloadSnapshot();
           },
           onNotice: (notice) => {
             dispatch({ type: 'notice', notice });
@@ -170,7 +189,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         live.start();
       });
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') live?.wake();
+      if (state !== 'active') return;
+      auth.resumeRefresh();
+      live?.wake();
     });
     return () => {
       run.current += 1;
@@ -180,6 +201,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       client.current = null;
       for (const handle of pending.values()) clearTimeout(handle);
       pending.clear();
+      clearTimeout(reloadState.timer);
+      reloadState.timer = undefined;
+      reloadState.again = false;
       dispatch({ type: 'clear' });
       setMessages([]);
       setStatus('connecting');
