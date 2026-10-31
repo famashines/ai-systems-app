@@ -83,9 +83,10 @@ advisory ids in `AUDIT_ALLOW` in `ci.yml`:
 - Login: code flow with PKCE. The refresh token is only in
   `expo-secure-store`. The access token is only in memory and is refreshed
   30 seconds before it expires. An OAuth error from the token endpoint
-  ends the session; a network error keeps it. Sign out waits for a running
-  token request, then deletes both tokens and revokes the newest refresh
-  token.
+  ends the session; a network error or a timeout (15 seconds for each
+  token, discovery and revoke request) keeps it. Sign out deletes both
+  tokens first, then waits at most 10 seconds for a running token request
+  and revokes the newest refresh token.
 - Lock: the app locks at start with a stored session, and after 5 minutes
   in the background (or when the clock moved back). Unlock is biometrics
   or the device PIN. The lock screen also has Sign out. If the screen-lock
@@ -93,8 +94,9 @@ advisory ids in `AUDIT_ALLOW` in `ci.yml`:
   because it cannot unlock; Settings shows a warning.
 - Language: follows the device (English, German or Urdu, else English),
   with an override in Settings. Urdu sets right to left and reloads the
-  app once. That reload does not lock the app (a mark valid for 30
-  seconds).
+  app once. When you pick the language in Settings, that reload does not
+  lock the app (a mark valid for 30 seconds). A reload after a change of
+  the device language locks as a normal cold start.
 - Theme: follows the device, with an override in Settings.
 
 ## Known limits
