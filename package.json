@@ -16,7 +16,7 @@
     "verify": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
-    "@famashines/ai-systems-contracts": "github:famashines/ai-systems-contracts#v0.2.0",
+    "@famashines/ai-systems-contracts": "github:famashines/ai-systems-contracts#v0.2.1",
     "expo": "~58.0.22",
     "expo-auth-session": "~58.0.16",
     "expo-build-properties": "~58.0.12",
@@ -51,6 +51,9 @@
     "react-dom": "19.3.0",
     "test-renderer": "^1.3.1",
     "typescript": "~6.0.3"
+  },
+  "allowScripts": {
+    "github:famashines/ai-systems-contracts#af3775fd692952b746e4ebafeb74f245693523f5": true
   },
   "jest": {
     "preset": "jest-expo",
