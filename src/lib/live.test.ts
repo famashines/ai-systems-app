@@ -1,7 +1,7 @@
 import { WsLimits } from '@famashines/ai-systems-contracts';
 
 import { backoffMs } from '@/lib/api';
-import { LiveClient, tryAgainLater, type LiveOptions, type LiveStatus } from '@/lib/live';
+import { LiveClient, minHeartbeatMs, refusedLimit, stableAfterMs, tryAgainLater, type LiveOptions, type LiveStatus } from '@/lib/live';
 import { FakeSocket, ids, installFakeSocket, task } from '@/test-fakes';
 
 const url = 'wss://ai.example.test/ws';
@@ -16,6 +16,7 @@ function setup(overrides: Partial<LiveOptions> = {}) {
     refresh: jest.fn(async () => true),
     onStatus: (status) => statuses.push(status),
     onSubscribed: jest.fn(),
+    onResync: jest.fn(),
     onNotice: jest.fn(),
     onAuthLost: jest.fn(),
     ...overrides,
@@ -205,28 +206,20 @@ it('backs off from 1 s to 30 s with jitter', () => {
   expect(backoffMs(20, 1)).toBe(30_000);
 });
 
-it('resets the backoff after welcome', async () => {
+it('sends reauth with a new token after hello, also before subscribed, and uses the newest token in hello', async () => {
   const { client } = setup();
   client.start();
   await flush();
-  FakeSocket.last().serverClose(1006);
-  await jest.advanceTimersByTimeAsync(1_000);
-  FakeSocket.last().serverClose(1006);
-  await jest.advanceTimersByTimeAsync(2_000);
-  await connect(FakeSocket.last());
-  FakeSocket.last().serverClose(1006);
-  await jest.advanceTimersByTimeAsync(1_000);
-  expect(FakeSocket.all).toHaveLength(4);
-});
-
-it('sends reauth with a new token while subscribed', async () => {
-  const { client } = setup();
-  client.reauth('ignored');
-  client.start();
-  await flush();
-  await connect(FakeSocket.last());
+  const socket = FakeSocket.last();
   client.reauth('access-2');
-  expect(FakeSocket.last().sent.at(-1)).toEqual({ type: 'reauth', token: 'access-2' });
+  socket.open();
+  expect(socket.sent[0]).toEqual({ type: 'hello', v: 1, token: 'access-2' });
+  client.reauth('access-3');
+  expect(socket.sent.at(-1)).toEqual({ type: 'reauth', token: 'access-3' });
+  socket.receive({ type: 'welcome', sessionId: ids.session, headSeq: 10, heartbeatMs: 20_000 });
+  socket.receive({ type: 'subscribed', topics: ['tasks'], fromSeq: 11 });
+  client.reauth('access-4');
+  expect(socket.sent.at(-1)).toEqual({ type: 'reauth', token: 'access-4' });
 });
 
 it('answers a server ping with pong', async () => {
@@ -289,18 +282,6 @@ it('reconnects at once on wake while it waits for the backoff', async () => {
   expect(FakeSocket.all).toHaveLength(2);
 });
 
-it('drops the connection on a frame that is not a ServerMessageV1', async () => {
-  const { client } = setup();
-  client.start();
-  await flush();
-  await connect(FakeSocket.last());
-  FakeSocket.last().receive('{"type":"notice","seq":"x"}');
-  expect(FakeSocket.all[0]!.closedWith).toBe(1000);
-  await jest.advanceTimersByTimeAsync(1_000);
-  FakeSocket.last().receive('not json');
-  expect(FakeSocket.all).toHaveLength(2);
-});
-
 it('stops: closes with 1000 and does not reconnect', async () => {
   const { client, statuses } = setup();
   client.start();
@@ -313,4 +294,152 @@ it('stops: closes with 1000 and does not reconnect', async () => {
   expect(socket.closedWith).toBe(1000);
   expect(FakeSocket.all).toHaveLength(1);
   expect(statuses.at(-1)).toBe('stopped');
+});
+
+it('keeps one socket and one hello when wake comes while the token is read', async () => {
+  let give = (_token: string) => {};
+  const getToken = jest.fn(() => new Promise<string>((resolve) => (give = resolve)));
+  const { client } = setup({ getToken });
+  client.start();
+  client.wake();
+  client.wake();
+  await flush();
+  give('access-1');
+  await flush();
+  expect(FakeSocket.all).toHaveLength(1);
+  FakeSocket.last().open();
+  expect(FakeSocket.last().sent.filter((frame) => frame.type === 'hello')).toHaveLength(1);
+});
+
+it('opens no second socket when wake comes during the refresh after 4401', async () => {
+  let renew = (_ok: boolean) => {};
+  const { client } = setup({ refresh: jest.fn(() => new Promise<boolean>((resolve) => (renew = resolve))) });
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  FakeSocket.last().serverClose(4401);
+  client.wake();
+  await flush();
+  expect(FakeSocket.all).toHaveLength(1);
+  renew(true);
+  await flush();
+  client.wake();
+  await flush();
+  expect(FakeSocket.all).toHaveLength(2);
+  FakeSocket.last().open();
+  expect(FakeSocket.last().sent.filter((frame) => frame.type === 'hello')).toHaveLength(1);
+});
+
+it('sends hello only on the socket that is current, and closes a replaced socket', async () => {
+  const { client } = setup();
+  client.start();
+  await flush();
+  const first = FakeSocket.last();
+  first.serverClose(1006);
+  await jest.advanceTimersByTimeAsync(1_000);
+  const second = FakeSocket.last();
+  expect(second).not.toBe(first);
+  first.open();
+  expect(first.sent).toEqual([]);
+  second.open();
+  expect(second.sent).toHaveLength(1);
+});
+
+it('does not reset the backoff at welcome, only when the session is stable', async () => {
+  const { client } = setup();
+  client.start();
+  await flush();
+  for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]) {
+    const count = FakeSocket.all.length;
+    await connect(FakeSocket.last());
+    FakeSocket.last().serverClose(tryAgainLater);
+    await jest.advanceTimersByTimeAsync(delay - 1);
+    expect(FakeSocket.all).toHaveLength(count);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.all).toHaveLength(count + 1);
+  }
+  await connect(FakeSocket.last());
+  await jest.advanceTimersByTimeAsync(stableAfterMs);
+  FakeSocket.last().serverClose(tryAgainLater);
+  await jest.advanceTimersByTimeAsync(1_000);
+  expect(FakeSocket.all).toHaveLength(8);
+});
+
+it('treats the first notice after subscribed as a stable session', async () => {
+  const { client } = setup();
+  client.start();
+  await flush();
+  FakeSocket.last().serverClose(1006);
+  await jest.advanceTimersByTimeAsync(1_000);
+  await connect(FakeSocket.last());
+  FakeSocket.last().receive(notice(11, 1));
+  FakeSocket.last().serverClose(1012);
+  await flush();
+  expect(FakeSocket.all).toHaveLength(3);
+});
+
+it('ignores and counts a frame that does not parse, and asks for a snapshot on a bad notice', async () => {
+  const { client, options } = setup();
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  const socket = FakeSocket.last();
+  socket.receive('{"type":"future_message","x":1}');
+  socket.receive('not json');
+  expect(client.invalidFrames).toBe(2);
+  expect(options.onResync).not.toHaveBeenCalled();
+  socket.receive('{"type":"notice","seq":"x"}');
+  expect(client.invalidFrames).toBe(3);
+  expect(options.onResync).toHaveBeenCalledTimes(1);
+  expect(socket.closedWith).toBeNull();
+  expect(FakeSocket.all).toHaveLength(1);
+});
+
+it('signs out with the reason refused after 3 refused tokens in one minute', async () => {
+  const { client, options } = setup();
+  client.start();
+  await flush();
+  for (let i = 0; i < refusedLimit; i += 1) {
+    await connect(FakeSocket.last());
+    FakeSocket.last().serverClose(4401);
+    await jest.advanceTimersByTimeAsync(5_000);
+  }
+  expect(options.refresh).toHaveBeenCalledTimes(refusedLimit - 1);
+  expect(options.onAuthLost).toHaveBeenCalledWith('refused');
+  expect(FakeSocket.all).toHaveLength(refusedLimit);
+});
+
+it('omits a stored lastSeq of 0 and reads the snapshot', async () => {
+  const { client, options } = setup({ lastSeq: 0 });
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  expect(FakeSocket.last().sent[0]).toEqual({ type: 'hello', v: 1, token: 'access-1' });
+  expect(options.onSubscribed).toHaveBeenCalledWith(true, 10);
+});
+
+it('loads the snapshot again on resync at any time and takes the next notice', async () => {
+  const { client, options } = setup();
+  client.start();
+  await flush();
+  await connect(FakeSocket.last(), 101, 100);
+  FakeSocket.last().receive(notice(101, 1));
+  FakeSocket.last().receive({ type: 'resync', reason: 'server_restart' });
+  expect(options.onResync).toHaveBeenCalledTimes(1);
+  FakeSocket.last().receive(notice(3, 1, ids.taskB));
+  expect(jest.mocked(options.onNotice).mock.calls.map(([n]) => n.seq)).toEqual([101, 3]);
+});
+
+it('sends the heartbeat at least each 5 s apart', async () => {
+  const { client } = setup();
+  client.start();
+  await flush();
+  const socket = FakeSocket.last();
+  socket.open();
+  socket.receive({ type: 'welcome', sessionId: ids.session, headSeq: 10, heartbeatMs: 100 });
+  socket.receive({ type: 'subscribed', topics: ['tasks'], fromSeq: 11 });
+  await jest.advanceTimersByTimeAsync(minHeartbeatMs - 1);
+  expect(socket.sent.filter((frame) => frame.type === 'ping')).toHaveLength(0);
+  await jest.advanceTimersByTimeAsync(1);
+  expect(socket.sent.filter((frame) => frame.type === 'ping')).toHaveLength(1);
 });

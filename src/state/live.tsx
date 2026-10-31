@@ -8,12 +8,13 @@ import * as api from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
 import { config } from '@/lib/config';
-import { LiveClient, type LiveStatus, type Notice } from '@/lib/live';
+import { LiveClient, type AuthLost, type LiveStatus, type Notice } from '@/lib/live';
 import { useSession } from '@/state/session';
 
 export const tasksCacheKey = 'live.tasks';
 export const slowAfterMs = 10_000;
 export const updatedShowMs = 3_000;
+export const cachedTasksMax = 200;
 const topics: Topic[] = ['tasks'];
 
 const CachedTasks = z.object({ items: z.array(TaskListItemV1), lastSeq: z.int().nonnegative() });
@@ -27,6 +28,7 @@ type Action =
   | { type: 'subscribed'; lastSeq: number; snapshot: boolean }
   | { type: 'page'; items: Task[]; hasMore: boolean; first: boolean }
   | { type: 'notice'; notice: Notice }
+  | { type: 'resync' }
   | { type: 'clear' };
 
 const empty: TasksState = { items: {}, lastSeq: null, synced: false, fresh: false, hasMore: false };
@@ -63,6 +65,8 @@ export function tasksReducer(state: TasksState, action: Action): TasksState {
       return { ...state, items: mergePage(state.items, action.items), hasMore: action.hasMore, synced: state.synced || action.first, fresh: true };
     case 'notice':
       return { ...state, items: applyNotice(state.items, action.notice), lastSeq: action.notice.seq, fresh: true };
+    case 'resync':
+      return { ...state, lastSeq: null, synced: false };
     case 'clear':
       return empty;
   }
@@ -119,7 +123,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     }
   };
   const loadSnapshot = useEffectEvent(() => void load());
-  const authLost = useEffectEvent(() => void session.signOut().catch(() => {}));
+  const authLost = useEffectEvent((reason: AuthLost) => void session.signOut(reason === 'refused' ? 'refused' : undefined).catch(() => {}));
 
   useEffect(() => {
     run.current += 1;
@@ -150,12 +154,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             dispatch({ type: 'subscribed', lastSeq, snapshot: needed });
             if (needed) loadSnapshot();
           },
+          onResync: () => {
+            dispatch({ type: 'resync' });
+            loadSnapshot();
+          },
           onNotice: (notice) => {
             dispatch({ type: 'notice', notice });
             const { commandId } = notice;
             if (commandId) setMessages((list) => list.map((message) => (message.key === commandId ? { ...message, taskId: notice.docId } : message)));
           },
-          onAuthLost: () => authLost(),
+          onAuthLost: (reason) => authLost(reason),
         });
         client.current = live;
         auth.onAccessToken((token) => live?.reauth(token));
@@ -184,7 +192,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!tasks.synced || !tasks.fresh || tasks.lastSeq === null) return;
     const mine = run.current;
-    void setItem(tasksCacheKey, { items: sortTasks(tasks.items), lastSeq: tasks.lastSeq })
+    void setItem(tasksCacheKey, { items: sortTasks(tasks.items).slice(0, cachedTasksMax), lastSeq: tasks.lastSeq })
       .then(() => {
         if (mine === run.current) setUpdatedAt(Date.now());
       })

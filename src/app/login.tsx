@@ -11,7 +11,7 @@ type State = 'idle' | 'busy' | 'unreachable' | 'failed';
 
 export default function Login() {
   const { t } = useSettings();
-  const { signIn } = useSession();
+  const { signIn, ended } = useSession();
   const [state, setState] = useState<State>('idle');
 
   const press = async () => {
@@ -29,6 +29,11 @@ export default function Login() {
       <View style={styles.body}>
         <AppText variant="headline">{t('login.title')}</AppText>
         <AppText color="onSurfaceVariant">{t('login.body')}</AppText>
+        {ended === 'refused' && state === 'idle' ? (
+          <AppText color="error" accessibilityRole="alert" accessibilityLiveRegion="polite">
+            {t('login.refused')}
+          </AppText>
+        ) : null}
         {state === 'unreachable' || state === 'failed' ? (
           <AppText color="error" accessibilityRole="alert" accessibilityLiveRegion="polite">
             {t(state === 'unreachable' ? 'login.errorUnreachable' : 'login.errorFailed')}

@@ -15,7 +15,7 @@ import { LockScreen } from '@/components/lock-screen';
 import { StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
-import { LiveProvider, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
+import { cachedTasksMax, LiveProvider, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 import { FakeSocket, fakeServer, ids, installFakeSocket, json, task } from '@/test-fakes';
@@ -337,6 +337,46 @@ describe('Live', () => {
       await waitFor(() => expect(auth.signOut).toHaveBeenCalledTimes(1));
     });
 
+    it('signs out with a clear message after 3 refused tokens in one minute', async () => {
+      jest.useFakeTimers();
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(
+        <>
+          <Tasks />
+          <Login />
+        </>,
+      );
+      for (const n of [1, 2, 3]) {
+        const socket = await connect(n);
+        await act(async () => socket.serverClose(4401));
+        await act(async () => jest.advanceTimersByTime(1_000));
+      }
+      await waitFor(() => expect(auth.signOut).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText('The server did not accept your sign-in. Sign in again.')).toBeOnTheScreen();
+    });
+
+    it('loads the snapshot again on a resync during the session', async () => {
+      server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 1, 'Before')], headSeq: 10 }), json(200, { items: [task(ids.taskA, 1, 'After restart')], headSeq: 2 }));
+      await show(<Tasks />);
+      const socket = await connect();
+      await screen.findByText('Before');
+      await act(async () => socket.receive({ type: 'resync', reason: 'server_restart' }));
+      expect(await screen.findByText('After restart')).toBeOnTheScreen();
+      await receive(socket, 3, task(ids.taskB, 1, 'New stream'));
+      expect(await screen.findByText('New stream')).toBeOnTheScreen();
+    });
+
+    it('keeps at most 200 tasks in the cache', async () => {
+      const many = Array.from({ length: cachedTasksMax + 5 }, (_, i) => task(`${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`, 1, `Task ${i}`, new Date(Date.UTC(2026, 9, 31, 10, 0, 0, 1000 - i)).toISOString()));
+      await setItem(tasksCacheKey, { items: many.slice(0, 50), lastSeq: 42 });
+      server.on('GET /api/tasks', json(200, { items: many, headSeq: 90 }));
+      await show(<Tasks />);
+      await connect(1, 91);
+      await waitFor(async () => expect((await getItem<{ items: unknown[] }>(tasksCacheKey))?.value.items).toHaveLength(cachedTasksMax));
+      expect((await getItem<{ items: { title: string }[] }>(tasksCacheKey))?.value.items[0]!.title).toBe('Task 0');
+    });
+
     it('sends reauth with a new token and ping when the app comes to the foreground', async () => {
       const handlers: ((state: AppStateStatus) => void)[] = [];
       jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, handler) => {
@@ -453,6 +493,28 @@ describe('Live', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
       expect(await screen.findByText('The server did not accept this message.')).toBeOnTheScreen();
       expect(screen.queryByRole('button', { name: 'Send again' })).toBeNull();
+    });
+
+    it('limits the input to 20000 characters and refuses a longer text with no retry', async () => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(<Chat />);
+      await connect();
+      expect(screen.getByLabelText('Message')).toHaveProp('maxLength', 20_000);
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'x'.repeat(20_001));
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      expect(await screen.findByText('The server did not accept this message.')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Send again' })).toBeNull();
+      expect(posts()).toHaveLength(0);
+    });
+
+    it('announces the status of a message', async () => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      server.on('POST /api/tasks', json(202, { taskId: ids.taskA, version: 1 }));
+      await show(<Chat />);
+      await connect();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      expect(screen.getByLabelText('Plan. Sending')).toHaveProp('accessibilityLiveRegion', 'polite');
     });
 
     it('shows the wait while the service is not available', async () => {
