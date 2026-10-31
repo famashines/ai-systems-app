@@ -4,7 +4,7 @@
     "slug": "ai-systems",
     "version": "0.1.0",
     "orientation": "portrait",
-    "scheme": "famashines-ai",
+    "scheme": "com.famashines.ai",
     "userInterfaceStyle": "automatic",
     "platforms": [
       "android"
