@@ -77,11 +77,10 @@ that the PR title is a Conventional Commit.
 ### Audit allow-list
 
 The audit step fails on each high or critical advisory, except the
-advisory ids in `AUDIT_ALLOW` in `ci.yml`:
-
-| Advisory id | Advisory | Reason |
-| ----------- | -------- | ------ |
-| 1243066 | [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), zod < 4.6.6 | It comes through `@expo/cli`, a build tool. zod does not run in the app bundle. Remove the entry when Expo SDK 58 ships a fixed `@expo/cli`. |
+advisory ids in `AUDIT_ALLOW` in `ci.yml` (a comma list). The list is
+empty now: the zod advisory 1243066 (GHSA-mrhx-c7xc-m3w5) went away with
+`@expo/cli` 58.1.18, and the app uses zod 4.6.7. Add an id only with a
+reason in this section.
 
 ## Behaviour
 
@@ -189,6 +188,7 @@ OIDC issuer and the four services), a development build on the emulator
 ```
 EXPO_PUBLIC_OIDC_ISSUER=http://10.0.2.2:8090/realms/ai-systems \
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 npm run android
+adb shell pm clear com.android.chrome
 maestro test .maestro/live-tasks.yaml \
   -e API_URL=http://localhost:8080 \
   -e ISSUER=http://localhost:8090/realms/ai-systems \
@@ -196,7 +196,8 @@ maestro test .maestro/live-tasks.yaml \
   -e USERNAME=<test owner> -e PASSWORD=<password>
 ```
 
-`API_URL` and `ISSUER` are the host view of the same services
+`pm clear` removes the Keycloak cookie of the last run from Chrome, so
+the login page shows again. `API_URL` and `ISSUER` are the host view of the same services
 (`localhost`); the app sees them as `10.0.2.2`. The token of
 `TOKEN_CLIENT_ID` must have the audience `ai-systems-app` and the role
 `owner`. React Native sends the WebSocket `Origin` from the URL, for
