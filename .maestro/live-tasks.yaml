@@ -1,5 +1,5 @@
 appId: com.famashines.ai
-name: Live tasks with an airplane mode gap
+name: "Live tasks with an airplane mode gap. NOT RUN: does not fit the local system of M1-05 yet, see README Maestro for what is missing"
 env:
   API_URL: http://localhost:8080
   ISSUER: http://localhost:8090/realms/ai-systems

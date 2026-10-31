@@ -107,10 +107,12 @@ reason in this section.
 
 ## Live tasks
 
-The app uses the contracts v0.2.0 schemas for each API answer
+The app uses the contracts v0.2.1 schemas for each API answer
 (`TaskListResultV1`, `ProblemJson`) and each WebSocket frame
-(`ClientMessageV1`, `ServerMessageV1`). A frame that does not parse
-closes the socket, and the app reconnects with `lastSeq`.
+(`ClientMessageV1`, `ServerMessageV1`). A frame that does not parse (for
+example a message type from a later contracts version) does not close the
+socket: the app ignores it and counts it. If that frame has the type
+`notice`, the app also loads the snapshot again, so no change is lost.
 
 ```
 app                                  socket-gateway        api-gateway
@@ -126,10 +128,11 @@ app                                  socket-gateway        api-gateway
 First load and reconnect:
 
 - The first connect has no `lastSeq`. A reconnect sends `lastSeq` and all
-  topics in the first `subscribe`.
+  topics in the first `subscribe`. A stored `lastSeq` of 0 counts as no
+  `lastSeq`.
 - The app reads the snapshot after `subscribed`, never before. It reads
-  it when it has no `lastSeq`, after `resync`, and when `fromSeq` is
-  higher than `lastSeq + 1`.
+  it when it has no `lastSeq`, after `resync` (before or after
+  `subscribed`), and when `fromSeq` is higher than `lastSeq + 1`.
 - A notice with `seq <= lastSeq` is dropped. A notice with a `rev` that
   is not higher than the stored task is dropped, but its `seq` still
   moves `lastSeq`. A snapshot item replaces a stored task when its `rev`
@@ -142,16 +145,23 @@ Connection rules:
 
 | Event | What the app does |
 | ----- | ----------------- |
-| a new access token (refresh 30 s before expiry) | `reauth { token }` |
-| each `heartbeatMs`, and when the app comes to the foreground | `ping`; no `pong` in 10 s closes and reconnects |
+| a new access token (refresh 30 s before expiry) | `reauth { token }` on an open socket (also between `hello` and `subscribed`); before the socket opens, `hello` takes the new token |
+| each `heartbeatMs` (at least 5 s), and when the app comes to the foreground | `ping`; no `pong` in 10 s closes and reconnects |
 | server `ping` | `pong` with the same `t` |
-| close `4401` | refresh the token, then reconnect at once; sign out if the refresh is refused; backoff if the refresh has a network error |
-| close `1012` | reconnect at once (backoff if it happens again before `welcome`) |
+| close `4401` | refresh the token, then reconnect; sign out if the refresh is refused; backoff if the refresh has a network error. The third `4401` in one minute with no stable session signs out, and the login screen shows "The server did not accept your sign-in." |
+| close `1012` | reconnect at once after a stable session, else with backoff |
 | close `4429`, `1013`, `4400`, `4408`, `1006`, other | reconnect with backoff |
 | `resync` | forget `lastSeq`, load the snapshot again |
+| the app comes to the foreground while it waits for a backoff | connect at once |
+
+One connect runs at a time. Each connect has a generation number that the
+client checks after each wait, and `hello` goes only to the socket that
+opened. A socket that the client replaces is closed first.
 
 Backoff: 1 s, 2 s, 4 s ... up to 30 s (`WsLimits`), each multiplied by a
-random factor from 0.5 to 1, at least 1 s. `welcome` resets it.
+random factor from 0.5 to 1, at least 1 s. Only a stable session resets
+it: 10 s after `subscribed`, or the first `notice` or `pong` after
+`subscribed`. `welcome` alone does not reset it.
 
 Chat (M1, no conversation topic yet): the app keeps the sent messages in
 memory.
@@ -163,17 +173,22 @@ memory.
 | Still processing | 10 s after Send with no notice |
 | Service not available. Trying again. | 502 or 503: up to 4 attempts with backoff; 429: the same, but it waits `Retry-After` |
 | Not sent, with Send again | a network error, or the last attempt failed; Send again uses the same key |
-| The server did not accept this message. | another problem answer (400, 409, 413, 422); no retry |
+| The server did not accept this message. | another problem answer (400, 409, 413, 422), or a text that does not fit `SubmitTaskCommandPayloadV1`; no retry. The input takes at most 20000 characters. |
 
 A 401 answer refreshes the token and sends the request one more time.
+TalkBack reads each status change of a message (polite live region).
 
-Offline: the app keeps the task list and `lastSeq` in the sqlite cache
-(key `live.tasks`), only after a snapshot. While the socket is not
+Offline: the app keeps the task list (the newest 200 tasks) and `lastSeq`
+in the sqlite cache (key `live.tasks`), only after a snapshot. While the socket is not
 connected, the Tasks screen shows "Offline, last update hh:mm" and the
 chat input and Send are off. Sign-out (also from the lock screen, or when
 the session ends) removes `live.tasks` and keeps the settings.
 
 ### Maestro
+
+Status: the flow is written, but it was never run, and it does not fit
+the local system of M1-05 yet. Maestro is not part of the toolchain now
+(owner decision).
 
 `.maestro/live-tasks.yaml` signs in, sends a task in the chat, sees it in
 the list, sets airplane mode, sends a second task through the API from the
@@ -181,29 +196,46 @@ host while the phone is offline (two times with the same
 `Idempotency-Key`), turns airplane mode off, and checks that each task
 shows once.
 
-It needs the local system of M1-05 (`docker compose up` in `kit`: a local
-OIDC issuer and the four services), a development build on the emulator
-`Pixel_8`, and the Maestro CLI.
+What is missing before it can run against the local system:
+
+- The dev issuer of the local system has no authorization endpoint and
+  no refresh grant. The app signs in with the code flow and PKCE and
+  refreshes the token, so it needs an issuer with both (for example a
+  local Keycloak realm with the client `ai-systems-app` and the redirect
+  `com.famashines.ai:/oauth2redirect`). The flow also needs a client with
+  the password grant (`TOKEN_CLIENT_ID`) for the API step.
+- The issuer host must be the same for the emulator and the containers:
+  the token `iss` must equal `EXPO_PUBLIC_OIDC_ISSUER`, and the gateways
+  check `iss` against `OIDC_ISSUER`. The local issuer gives
+  `http://issuer:8080/realms/ai-systems`, a name that only the containers
+  resolve. `10.0.2.2` works only from the emulator, `localhost` only from
+  the host.
+- Ports of the local system: api-gateway 8080, socket-gateway 8081,
+  issuer 8082. `/api` and `/ws` are on different ports, so the build needs
+  `EXPO_PUBLIC_API_URL=http://10.0.2.2:8080` and
+  `EXPO_PUBLIC_WS_URL=ws://10.0.2.2:8081/ws`.
+- React Native sends the WebSocket `Origin` from the URL, here
+  `http://10.0.2.2:8081`. The socket-gateway `ALLOWED_ORIGINS` must have
+  it.
+- The Maestro CLI.
+
+When these are in place:
 
 ```
-EXPO_PUBLIC_OIDC_ISSUER=http://10.0.2.2:8090/realms/ai-systems \
-EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 npm run android
+EXPO_PUBLIC_OIDC_ISSUER=<issuer URL that the emulator and the containers both reach> \
+EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 \
+EXPO_PUBLIC_WS_URL=ws://10.0.2.2:8081/ws npm run android
 adb shell pm clear com.android.chrome
 maestro test .maestro/live-tasks.yaml \
   -e API_URL=http://localhost:8080 \
-  -e ISSUER=http://localhost:8090/realms/ai-systems \
-  -e TOKEN_CLIENT_ID=<client with direct access grants> \
+  -e ISSUER=<the same issuer URL, as the host reaches it> \
+  -e TOKEN_CLIENT_ID=<client with the password grant> \
   -e USERNAME=<test owner> -e PASSWORD=<password>
 ```
 
-`pm clear` removes the Keycloak cookie of the last run from Chrome, so
-the login page shows again. `API_URL` and `ISSUER` are the host view of the same services
-(`localhost`); the app sees them as `10.0.2.2`. The token of
-`TOKEN_CLIENT_ID` must have the audience `ai-systems-app` and the role
-`owner`. React Native sends the WebSocket `Origin` from the URL, for
-example `http://10.0.2.2:8080`, so the local socket-gateway must have it
-in `ALLOWED_ORIGINS`. The ports above are examples; use the ports of the
-M1-05 compose file.
+`pm clear` removes the issuer cookie of the last run from Chrome, so the
+login page shows again. The token of `TOKEN_CLIENT_ID` must have the
+audience `ai-systems-app` and the role `owner`.
 
 ## Known limits
 
@@ -212,14 +244,17 @@ M1-05 compose file.
 - Chat messages are in memory only. After a restart the chat is empty;
   the tasks are in the Tasks list. The `conversation:<id>` topic comes in
   M2.
-- A token refresh with no answer blocks a new refresh for at most 60
-  seconds (`lateAnswerMs`). React Native has no read timeout on fetch.
+- A refresh with the same refresh token joins the request that waits,
+  until that request answers, so the server never sees one refresh token
+  two times. Each caller stops waiting after 15 s. React Native has no
+  read timeout on fetch, so a request that never answers blocks token
+  refresh until the connection fails; a new sign-in starts a new
+  session. Sign-out waits at most 10 s for it, and a late answer is
+  revoked.
 - `1013` is not in contracts `WsCloseCode` v0.2.0 (M2-02); the app has a
   local constant.
-- Contracts v0.2.0 declares `engines.node >=26` for its own build. The
-  app does not use `engine-strict`, so `npm ci` on Node 22.13.0 shows an
-  engine warning for it. A contracts release with a lower `engines` range
-  can remove this.
+- Invalid WebSocket frames are only counted in memory
+  (`LiveClient.invalidFrames`); there is no telemetry yet.
 
 ## What the owner must do later
 
