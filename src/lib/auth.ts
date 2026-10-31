@@ -1,12 +1,13 @@
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 
-import { config } from '@/lib/config';
+import { config, secure } from '@/lib/config';
 
 export const refreshTokenKey = 'auth.refreshToken';
 export const refreshEarlyMs = 30_000;
 export const requestTimeoutMs = 15_000;
 export const signOutWaitMs = 10_000;
+export const lateAnswerMs = 60_000;
 
 export class IssuerUnreachableError extends Error {}
 export class IssuerInvalidError extends Error {}
@@ -21,9 +22,14 @@ let generation = 0;
 let closing = false;
 let orphan: string | null = null;
 let onEnded = () => {};
+let onToken = (_token: string) => {};
 
 export function onSessionEnded(handler: () => void): void {
   onEnded = handler;
+}
+
+export function onAccessToken(handler: (token: string) => void): void {
+  onToken = handler;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -37,11 +43,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 function track<T>(promise: Promise<T>): Promise<T> {
   work = Promise.allSettled([work, promise]).then(() => undefined);
   return promise;
-}
-
-function secure(url: string): boolean {
-  const { protocol, hostname } = new URL(url);
-  return protocol === 'https:' || (__DEV__ && ['localhost', '127.0.0.1', '10.0.2.2'].includes(hostname));
 }
 
 export function checkDiscovery(doc: AuthSession.DiscoveryDocument, issuer: string): void {
@@ -80,6 +81,7 @@ async function keep(tokens: AuthSession.TokenResponse, started: number): Promise
   access = { token: tokens.accessToken, expiresAt: Date.now() + (tokens.expiresIn ?? 300) * 1000 };
   clearTimeout(timer);
   timer = setTimeout(() => void refresh().catch(() => {}), Math.max(access.expiresAt - refreshEarlyMs - Date.now(), 0));
+  onToken(access.token);
   return true;
 }
 
@@ -122,7 +124,7 @@ async function runRefresh(): Promise<boolean> {
   if (!refreshToken) return false;
   const doc = await discover();
   try {
-    const tokens = await withTimeout(AuthSession.refreshAsync({ clientId: config.oidcClientId, refreshToken }, doc), requestTimeoutMs);
+    const tokens = await AuthSession.refreshAsync({ clientId: config.oidcClientId, refreshToken }, doc);
     return await keep(tokens, started);
   } catch (error) {
     if (!(error instanceof AuthSession.TokenError)) throw error;
@@ -136,10 +138,16 @@ async function runRefresh(): Promise<boolean> {
 
 export function refresh(): Promise<boolean> {
   if (closing) return Promise.resolve(false);
-  inflight ??= track(runRefresh()).finally(() => {
-    inflight = null;
-  });
-  return inflight;
+  if (!inflight) {
+    const mine = runRefresh();
+    inflight = mine;
+    void track(withTimeout(mine, lateAnswerMs))
+      .catch(() => {})
+      .finally(() => {
+        if (inflight === mine) inflight = null;
+      });
+  }
+  return withTimeout(inflight, requestTimeoutMs);
 }
 
 export async function restore(): Promise<boolean> {

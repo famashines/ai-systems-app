@@ -84,7 +84,10 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await auth.signOut();
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  const leaving = auth.signOut();
+  await jest.advanceTimersByTimeAsync(auth.signOutWaitMs + auth.requestTimeoutMs);
+  await leaving;
   jest.useRealTimers();
 });
 
@@ -326,4 +329,50 @@ it('removes a refresh token that is written after sign-out started, and revokes 
   expect(mockStore.size).toBe(0);
   expect(await auth.getAccessToken()).toBeNull();
   expect(calls.find((call) => call.url === revocationEndpoint)!.body.get('token')).toBe('refresh-2');
+});
+
+it('keeps a late refresh answer when the session did not change', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let open = () => {};
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>((resolve) => (open = resolve)) });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+
+  const refreshing = auth.refresh().catch((error: unknown) => error);
+  const joined = auth.refresh().catch((error: unknown) => error);
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.requestTimeoutMs);
+  expect(await refreshing).toBeInstanceOf(auth.TimeoutError);
+  expect(await joined).toBeInstanceOf(auth.TimeoutError);
+  expect(tokenCalls()).toHaveLength(2);
+
+  open();
+  while (mockStore.get(auth.refreshTokenKey) !== 'refresh-2') await settle();
+  expect(await auth.getAccessToken()).toBe('access-2');
+  expect(tokenCalls()).toHaveLength(2);
+});
+
+it('starts a new refresh when an old one has no answer for a long time', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>(() => {}) }, tokens(3));
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.lateAnswerMs);
+  await auth.refresh();
+  expect(tokenCalls()).toHaveLength(3);
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
+});
+
+it('gives each new access token to the live connection', async () => {
+  const seen: string[] = [];
+  auth.onAccessToken((token) => seen.push(token));
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1), tokens(2));
+  await auth.signIn();
+  await auth.refresh();
+  expect(seen).toEqual(['access-1', 'access-2']);
 });
