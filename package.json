@@ -16,6 +16,7 @@
     "verify": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
+    "@famashines/ai-systems-contracts": "github:famashines/ai-systems-contracts#v0.2.0",
     "expo": "~58.0.21",
     "expo-auth-session": "~58.0.16",
     "expo-build-properties": "~58.0.11",
@@ -36,7 +37,8 @@
     "react": "19.3.0",
     "react-native": "0.88.1",
     "react-native-safe-area-context": "~5.10.1",
-    "react-native-screens": "~4.30.0"
+    "react-native-screens": "~4.30.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@testing-library/react-native": "^14.1.0",
@@ -60,12 +62,18 @@
       "<rootDir>/jest.setup.js"
     ],
     "collectCoverageFrom": [
-      "src/**/*.{ts,tsx}"
+      "src/**/*.{ts,tsx}",
+      "!src/test-fakes.ts"
     ],
     "coverageThreshold": {
       "global": {
         "lines": 70
       }
-    }
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation|@famashines))",
+      "/node_modules/react-native-reanimated/plugin/",
+      "/node_modules/@react-native/babel-preset/"
+    ]
   }
 }
