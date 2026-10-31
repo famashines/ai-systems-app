@@ -74,7 +74,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (await auth.signIn()) setStatus('signedIn');
     },
     signOut: async (reason) => {
-      setEnded(reason ?? null);
+      if (reason) setEnded(reason);
       await auth.signOut();
       setLocked(false);
       setStatus('signedOut');

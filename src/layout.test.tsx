@@ -5,6 +5,7 @@ import { renderRouter } from 'expo-router/testing-library';
 import { Text } from 'react-native';
 
 import RootLayout from '@/app/_layout';
+import Login from '@/app/login';
 import * as auth from '@/lib/auth';
 import { removeItem } from '@/lib/cache';
 
@@ -57,4 +58,16 @@ it('covers the content with the lock and hides it from accessibility', async () 
   let node = screen.getByText('chat content', { includeHiddenElements: true }).parent;
   while (node && node.props.importantForAccessibility !== 'no-hide-descendants') node = node.parent;
   expect(node).not.toBeNull();
+});
+
+it('keeps "Your session ended" on the login screen when the live connection loses the token', async () => {
+  jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+  jest.mocked(auth.getAccessToken).mockImplementationOnce(async () => {
+    jest.mocked(auth.onSessionEnded).mock.calls.at(-1)![0]();
+    return null;
+  });
+  jest.mocked(auth.restore).mockResolvedValue(true);
+  await renderRouter({ ...routes, login: Login }, { initialUrl: '/' });
+  expect(await screen.findByRole('alert')).toHaveTextContent('Your session ended. Sign in again.');
+  expect(auth.signOut).toHaveBeenCalledTimes(1);
 });
