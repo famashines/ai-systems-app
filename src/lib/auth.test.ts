@@ -440,6 +440,60 @@ it('does not end the session on a late invalid_grant of a request that a newer r
   expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
 });
 
+type Answer = { status: number; body: object };
+
+async function twoRefreshesWithOneToken(late: Answer, next: Answer) {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let openLate = () => {};
+  let openNext = () => {};
+  reply(tokenEndpoint, { ...late, wait: new Promise<void>((resolve) => (openLate = resolve)) }, { ...next, wait: new Promise<void>((resolve) => (openNext = resolve)) });
+  reply(revocationEndpoint, { status: 200, body: {} });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.lateAnswerMs);
+  void auth.refresh().catch(() => {});
+  while (tokenCalls().length < 3) await settle();
+  expect(tokenCalls().map((call) => call.body.get('refresh_token'))).toEqual([null, 'refresh-1', 'refresh-1']);
+  let release = () => {};
+  mockWriteGate = new Promise<void>((resolve) => (release = resolve));
+  return { openLate, openNext, release };
+}
+
+const settleMany = async () => {
+  for (let i = 0; i < 20; i += 1) await settle();
+};
+
+it('ends the session for good when invalid_grant comes while a late answer writes its token', async () => {
+  const ended = jest.fn();
+  auth.onSessionEnded(ended);
+  const { openLate, openNext, release } = await twoRefreshesWithOneToken(tokens(2), { status: 400, body: { error: 'invalid_grant' } });
+  openLate();
+  await settleMany();
+  openNext();
+  await settleMany();
+  expect(ended).toHaveBeenCalledTimes(1);
+  release();
+  await settleMany();
+  expect(mockStore.size).toBe(0);
+  expect(await auth.getAccessToken()).toBeNull();
+  expect(revoked()).toEqual(['refresh-2']);
+});
+
+it('keeps one of two refresh answers that come in the same tick, and revokes the other', async () => {
+  const { openLate, openNext, release } = await twoRefreshesWithOneToken(tokens(2), tokens(3));
+  openLate();
+  openNext();
+  await settleMany();
+  release();
+  await settleMany();
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-2');
+  expect(await auth.getAccessToken()).toBe('access-2');
+  expect(revoked()).toEqual(['refresh-3']);
+});
+
 it('revokes a late refresh token of an ended session at once, and each token of the next session', async () => {
   reply(discoveryUrl, discoveryDoc);
   reply(tokenEndpoint, tokens(1));
