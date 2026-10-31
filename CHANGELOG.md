@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- A token refresh with no answer no longer blocks refresh for ever. After
+  60 s, or at a foreground event when it is older than 15 s, the app
+  sends one new refresh with the same token. A late answer is revoked
+  when a newer token is stored.
+- The WebSocket closes and reconnects when `subscribed` does not come in
+  15 s after the socket opens.
+- A burst of `resync` or bad notices reads the snapshot one time.
+
 ### Added
 
 - App shell: Expo SDK 58, Expo Router, TypeScript strict, package

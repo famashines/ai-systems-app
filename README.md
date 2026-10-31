@@ -151,7 +151,8 @@ Connection rules:
 | close `4401` | refresh the token, then reconnect; sign out if the refresh is refused; backoff if the refresh has a network error. The third `4401` in one minute with no stable session signs out, and the login screen shows "The server did not accept your sign-in." |
 | close `1012` | reconnect at once after a stable session, else with backoff |
 | close `4429`, `1013`, `4400`, `4408`, `1006`, other | reconnect with backoff |
-| `resync` | forget `lastSeq`, load the snapshot again |
+| no `subscribed` in 15 s after the socket opens | close and reconnect with backoff |
+| `resync`, or a `notice` that does not parse | forget `lastSeq` (`resync` only), load the snapshot again; requests in 0.5 s give one read, and requests during a read give one more read after it |
 | the app comes to the foreground while it waits for a backoff | connect at once |
 
 One connect runs at a time. Each connect has a generation number that the
@@ -245,12 +246,16 @@ audience `ai-systems-app` and the role `owner`.
   the tasks are in the Tasks list. The `conversation:<id>` topic comes in
   M2.
 - A refresh with the same refresh token joins the request that waits,
-  until that request answers, so the server never sees one refresh token
-  two times. Each caller stops waiting after 15 s. React Native has no
-  read timeout on fetch, so a request that never answers blocks token
-  refresh until the connection fails; a new sign-in starts a new
-  session. Sign-out waits at most 10 s for it, and a late answer is
-  revoked.
+  so the server normally sees each refresh token one time. React Native
+  fetch has no read timeout and `expo-auth-session` takes no
+  `AbortSignal`, so a request can wait for ever. After 60 s
+  (`lateAnswerMs`), or at the next foreground event when the request is
+  older than 15 s, the app gives up on it and sends one new refresh with
+  the same refresh token. A late answer of the old request is revoked if
+  a newer token is stored, else kept; its late `invalid_grant` does not
+  end the session. With refresh token rotation the worst case is an
+  `invalid_grant` on the new request: the app signs out, and the user
+  signs in again. Each caller stops waiting after 15 s.
 - `1013` is not in contracts `WsCloseCode` v0.2.0 (M2-02); the app has a
   local constant.
 - Invalid WebSocket frames are only counted in memory

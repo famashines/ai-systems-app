@@ -1,7 +1,7 @@
 import { WsLimits } from '@famashines/ai-systems-contracts';
 
 import { backoffMs } from '@/lib/api';
-import { LiveClient, minHeartbeatMs, refusedLimit, stableAfterMs, tryAgainLater, type LiveOptions, type LiveStatus } from '@/lib/live';
+import { handshakeMs, LiveClient, minHeartbeatMs, refusedLimit, stableAfterMs, tryAgainLater, type LiveOptions, type LiveStatus } from '@/lib/live';
 import { FakeSocket, ids, installFakeSocket, task } from '@/test-fakes';
 
 const url = 'wss://ai.example.test/ws';
@@ -442,4 +442,31 @@ it('sends the heartbeat at least each 5 s apart', async () => {
   expect(socket.sent.filter((frame) => frame.type === 'ping')).toHaveLength(0);
   await jest.advanceTimersByTimeAsync(1);
   expect(socket.sent.filter((frame) => frame.type === 'ping')).toHaveLength(1);
+});
+
+it('closes and reconnects with backoff when subscribed does not come in 15 s after open', async () => {
+  const { client, statuses } = setup();
+  client.start();
+  await flush();
+  const socket = FakeSocket.last();
+  socket.open();
+  socket.receive({ type: 'welcome', sessionId: ids.session, headSeq: 10, heartbeatMs: 20_000 });
+  await jest.advanceTimersByTimeAsync(handshakeMs - 1);
+  expect(socket.closedWith).toBeNull();
+  await jest.advanceTimersByTimeAsync(1);
+  expect(socket.closedWith).toBe(1000);
+  expect(statuses.at(-1)).toBe('reconnecting');
+  expect(FakeSocket.all).toHaveLength(1);
+  await jest.advanceTimersByTimeAsync(1_000);
+  expect(FakeSocket.all).toHaveLength(2);
+});
+
+it('keeps the socket when subscribed comes in time', async () => {
+  const { client } = setup();
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  FakeSocket.last().receive({ type: 'pong', t: 1 });
+  await jest.advanceTimersByTimeAsync(handshakeMs);
+  expect(FakeSocket.last().closedWith).toBeNull();
 });

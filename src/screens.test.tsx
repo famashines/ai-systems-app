@@ -15,7 +15,7 @@ import { LockScreen } from '@/components/lock-screen';
 import { StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
-import { cachedTasksMax, LiveProvider, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
+import { cachedTasksMax, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 import { FakeSocket, fakeServer, ids, installFakeSocket, json, task } from '@/test-fakes';
@@ -33,6 +33,7 @@ jest.mock('@/lib/auth', () => {
     signOut: jest.fn(async () => {}),
     onSessionEnded: jest.fn(),
     onAccessToken: jest.fn(),
+    resumeRefresh: jest.fn(),
     getAccessToken: jest.fn(),
     refresh: jest.fn(async () => true),
   };
@@ -367,6 +368,34 @@ describe('Live', () => {
       expect(await screen.findByText('New stream')).toBeOnTheScreen();
     });
 
+    it('reads the snapshot one time for a burst of bad notices', async () => {
+      jest.useFakeTimers();
+      let answer = (_response: Response) => {};
+      server.on(
+        'GET /api/tasks',
+        json(200, { items: [], headSeq: 10 }),
+        () => new Promise<Response>((resolve) => (answer = resolve)),
+        json(200, { items: [task(ids.taskB, 1, 'Late')], headSeq: 12 }),
+      );
+      await show(<Tasks />);
+      const socket = await connect();
+      await waitFor(() => expect(tasksCalls()).toHaveLength(1));
+      await act(async () => {
+        for (let seq = 11; seq < 16; seq += 1) socket.receive(`{"type":"notice","seq":${seq},"topic":"tasks"}`);
+      });
+      await act(async () => jest.advanceTimersByTime(reloadDelayMs));
+      expect(tasksCalls()).toHaveLength(2);
+      await act(async () => {
+        for (let seq = 16; seq < 19; seq += 1) socket.receive(`{"type":"notice","seq":${seq},"topic":"tasks"}`);
+      });
+      await act(async () => jest.advanceTimersByTime(reloadDelayMs * 4));
+      expect(tasksCalls()).toHaveLength(2);
+      await act(async () => answer(json(200, { items: [task(ids.taskA, 1, 'Fresh')], headSeq: 11 })));
+      await act(async () => jest.advanceTimersByTime(reloadDelayMs));
+      expect(tasksCalls()).toHaveLength(3);
+      expect(await screen.findByText('Late')).toBeOnTheScreen();
+    });
+
     it('keeps at most 200 tasks in the cache', async () => {
       const many = Array.from({ length: cachedTasksMax + 5 }, (_, i) => task(`${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`, 1, `Task ${i}`, new Date(Date.UTC(2026, 9, 31, 10, 0, 0, 1000 - i)).toISOString()));
       await setItem(tasksCacheKey, { items: many.slice(0, 50), lastSeq: 42 });
@@ -391,6 +420,7 @@ describe('Live', () => {
       await act(async () => handler('access-2'));
       expect(socket.sent.at(-1)).toEqual({ type: 'reauth', token: 'access-2' });
       await act(async () => change('active'));
+      expect(auth.resumeRefresh).toHaveBeenCalledTimes(1);
       expect(socket.sent.at(-1)).toMatchObject({ type: 'ping' });
     });
 

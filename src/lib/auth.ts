@@ -16,7 +16,7 @@ export class TimeoutError extends Error {}
 let discovery: AuthSession.DiscoveryDocument | null = null;
 let access: { token: string; expiresAt: number } | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
-const waiting = new Map<string, Promise<boolean>>();
+const waiting = new Map<string, { answer: Promise<boolean>; at: number }>();
 let work: Promise<unknown> = Promise.resolve();
 let generation = 0;
 let closing = false;
@@ -79,9 +79,13 @@ function discard(token: string | undefined): void {
   else void track(revoke(token));
 }
 
-async function keep(tokens: AuthSession.TokenResponse, started: number): Promise<boolean> {
+async function replaced(used: string | undefined): Promise<boolean> {
+  return used !== undefined && (await SecureStore.getItemAsync(refreshTokenKey)) !== used;
+}
+
+async function keep(tokens: AuthSession.TokenResponse, started: number, used?: string): Promise<boolean> {
   if (!tokens.accessToken) throw new Error('The token response has no access token');
-  if (started !== generation) {
+  if (started !== generation || (await replaced(used))) {
     discard(tokens.refreshToken);
     return false;
   }
@@ -135,10 +139,10 @@ async function runRefresh(refreshToken: string, started: number): Promise<boolea
   const doc = await discover();
   try {
     const tokens = await AuthSession.refreshAsync({ clientId: config.oidcClientId, refreshToken }, doc);
-    return await keep(tokens, started);
+    return await keep(tokens, started, refreshToken);
   } catch (error) {
     if (!(error instanceof AuthSession.TokenError)) throw error;
-    if (started === generation) {
+    if (started === generation && !(await replaced(refreshToken))) {
       await clear();
       onEnded();
     }
@@ -151,15 +155,19 @@ async function startRefresh(): Promise<boolean> {
   const refreshToken = await SecureStore.getItemAsync(refreshTokenKey);
   if (!refreshToken) return false;
   const joined = waiting.get(refreshToken);
-  if (joined) return joined;
+  if (joined && Date.now() - joined.at < lateAnswerMs) return joined.answer;
   const mine = runRefresh(refreshToken, started);
-  waiting.set(refreshToken, mine);
+  waiting.set(refreshToken, { answer: mine, at: Date.now() });
   const done = () => {
-    if (waiting.get(refreshToken) === mine) waiting.delete(refreshToken);
+    if (waiting.get(refreshToken)?.answer === mine) waiting.delete(refreshToken);
   };
   mine.then(done, done);
   void track(withTimeout(mine, lateAnswerMs)).catch(() => {});
   return mine;
+}
+
+export function resumeRefresh(now = Date.now()): void {
+  for (const [token, entry] of waiting) if (now - entry.at >= requestTimeoutMs) waiting.delete(token);
 }
 
 export function refresh(): Promise<boolean> {

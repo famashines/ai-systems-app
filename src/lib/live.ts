@@ -4,6 +4,7 @@ import { backoffMs } from '@/lib/api';
 
 export const tryAgainLater = 1013;
 export const stableAfterMs = 10_000;
+export const handshakeMs = 15_000;
 export const minHeartbeatMs = 5_000;
 export const refusedLimit = 3;
 export const refusedWindowMs = 60_000;
@@ -32,6 +33,7 @@ export class LiveClient {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private pongTimer: ReturnType<typeof setTimeout> | undefined;
   private stableTimer: ReturnType<typeof setTimeout> | undefined;
+  private handshakeTimer: ReturnType<typeof setTimeout> | undefined;
   private beat: ReturnType<typeof setInterval> | undefined;
   private heartbeatMs: number = WsLimits.pingIntervalMs;
   private token: string | null = null;
@@ -86,6 +88,7 @@ export class LiveClient {
     clearTimeout(this.timer);
     clearTimeout(this.pongTimer);
     clearTimeout(this.stableTimer);
+    clearTimeout(this.handshakeTimer);
     clearInterval(this.beat);
     this.timer = undefined;
     this.pongTimer = undefined;
@@ -129,6 +132,8 @@ export class LiveClient {
     this.replace(ws);
     ws.onopen = () => {
       if (this.ws !== ws || !this.token) return;
+      clearTimeout(this.handshakeTimer);
+      this.handshakeTimer = setTimeout(() => this.lost(), handshakeMs);
       this.send({ type: 'hello', v: 1, token: this.token, ...(this.lastSeq ? { lastSeq: this.lastSeq } : {}) }, ws);
     };
     ws.onmessage = (event) => {
@@ -167,6 +172,7 @@ export class LiveClient {
       case 'subscribed': {
         const snapshot = !this.lastSeq || message.fromSeq > this.lastSeq + 1;
         if (!this.lastSeq) this.lastSeq = Math.max(message.fromSeq - 1, 0);
+        clearTimeout(this.handshakeTimer);
         this.subscribed = true;
         this.connected = true;
         clearInterval(this.beat);
