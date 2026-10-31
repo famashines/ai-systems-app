@@ -4,6 +4,7 @@ import { FlatList, StyleSheet, TextInput, View } from 'react-native';
 import { LiveBar } from '@/components/live-bar';
 import { AppText, Button, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
+import { taskTextMax } from '@/lib/api';
 import { useLive, type Message } from '@/state/live';
 import { useSettings } from '@/state/settings';
 import { radius, spacing, touchTarget, type } from '@/theme';
@@ -23,7 +24,7 @@ function Row({ message }: { message: Message }) {
   const bad = message.state === 'failed' || message.state === 'rejected';
   return (
     <View style={[styles.message, { backgroundColor: colors.surfaceContainer }]}>
-      <View accessible accessibilityLabel={t('chat.message', { text: message.text, status })}>
+      <View accessible accessibilityLiveRegion="polite" accessibilityLabel={t('chat.message', { text: message.text, status })}>
         <AppText>{message.text}</AppText>
         <AppText variant="bodySmall" color={bad ? 'error' : 'onSurfaceVariant'}>
           {status}
@@ -70,6 +71,7 @@ export default function Chat() {
             value={text}
             onChangeText={setText}
             editable={online}
+            maxLength={taskTextMax}
             accessibilityLabel={t('chat.inputLabel')}
             accessibilityHint={online ? undefined : t('chat.offline')}
             accessibilityState={{ disabled: !online }}

@@ -87,6 +87,12 @@ it('gives a network error when the token refresh has a network error', async () 
   await expect(submitTaskOnce('Plan', commandId)).rejects.toMatchObject({ kind: 'network' });
 });
 
+it('refuses a text that does not fit the contract before any request', async () => {
+  await expect(submitTask('x'.repeat(20_001), commandId)).rejects.toMatchObject({ kind: 'rejected' });
+  await expect(submitTask('   ', commandId)).rejects.toMatchObject({ kind: 'rejected' });
+  expect(server.requests).toHaveLength(0);
+});
+
 it('gives the problem of a refused command', async () => {
   server.on('POST /api/tasks', problem(409, 'conflict'));
   await expect(submitTask('Plan', commandId)).rejects.toMatchObject({ kind: 'rejected', problem: { code: 'conflict' } });

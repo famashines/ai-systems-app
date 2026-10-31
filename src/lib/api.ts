@@ -7,6 +7,7 @@ import { config } from '@/lib/config';
 export const fetchTimeoutMs = 15_000;
 export const pageSize = 50;
 export const sendAttempts = 4;
+export const taskTextMax = 20_000;
 
 export type ApiErrorKind = 'network' | 'unauthorized' | 'rateLimited' | 'unavailable' | 'rejected';
 
@@ -72,13 +73,15 @@ async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>)
   throw new ApiError('rejected', 0, problem.success ? problem.data : undefined);
 }
 
-export function submitTaskOnce(text: string, key: string): Promise<Submitted> {
+export async function submitTaskOnce(text: string, key: string): Promise<Submitted> {
+  const payload = SubmitTaskCommandPayloadV1.safeParse({ text });
+  if (!payload.success) throw new ApiError('rejected');
   return request(
     '/api/tasks',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
-      body: JSON.stringify(SubmitTaskCommandPayloadV1.parse({ text })),
+      body: JSON.stringify(payload.data),
     },
     SubmitTaskResult,
   );
