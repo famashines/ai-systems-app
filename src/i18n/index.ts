@@ -9,8 +9,10 @@ export const languages: Language[] = ['en', 'de', 'ur'];
 
 export const dictionaries: Record<Language, Record<Key, string>> = { en, de, ur };
 
-export function translate(language: Language, key: Key): string {
-  return dictionaries[language][key];
+export type Params = Record<string, string>;
+
+export function translate(language: Language, key: Key, params: Params = {}): string {
+  return dictionaries[language][key].replace(/\{(\w+)\}/g, (match, name: string) => params[name] ?? match);
 }
 
 export function isRTL(language: Language): boolean {

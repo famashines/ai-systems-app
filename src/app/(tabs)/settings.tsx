@@ -39,8 +39,9 @@ function Choices<T extends string>({ label, options, value, onChange }: { label:
 }
 
 export default function Settings() {
-  const { t, settings, update } = useSettings();
-  const { signOut } = useSession();
+  const { t, settings, update, colors } = useSettings();
+  const version = Constants.expoConfig?.version ?? '';
+  const { signOut, deviceSecure } = useSession();
   const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
 
   const leave = async () => {
@@ -67,11 +68,16 @@ export default function Settings() {
       <ScrollView contentContainerStyle={styles.content}>
         <Choices label={t('settings.language')} options={languageOptions} value={settings.language} onChange={(language) => void update({ language })} />
         <Choices label={t('settings.theme')} options={themeOptions} value={settings.theme} onChange={(theme) => void update({ theme })} />
-        <View style={styles.group} accessible accessibilityLabel={`${t('settings.version')}: ${Constants.expoConfig?.version ?? ''}`}>
+        {deviceSecure ? null : (
+          <AppText color="onErrorContainer" accessibilityRole="alert" style={[styles.warning, { backgroundColor: colors.errorContainer }]}>
+            {t('settings.noScreenLock')}
+          </AppText>
+        )}
+        <View style={styles.group} accessible accessibilityLabel={t('settings.versionValue', { version })}>
           <AppText variant="label" color="onSurfaceVariant">
             {t('settings.version')}
           </AppText>
-          <AppText>{Constants.expoConfig?.version ?? ''}</AppText>
+          <AppText>{version}</AppText>
         </View>
         {state === 'failed' ? <StateView kind="error" title={t('common.error')} retryLabel={t('common.retry')} onRetry={() => void leave()} /> : null}
         <Button label={t('settings.signOut')} variant="tonal" busy={state === 'busy'} onPress={() => void leave()} />
@@ -85,5 +91,6 @@ const styles = StyleSheet.create({
   group: { gap: spacing.xs },
   option: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  warning: { padding: spacing.md, borderRadius: radius.md },
   dot: { width: 10, height: 10, borderRadius: radius.full },
 });

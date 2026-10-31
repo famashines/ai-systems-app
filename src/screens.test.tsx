@@ -13,7 +13,7 @@ import { redirectSystemPath } from '@/app/+native-intent';
 import { LockScreen } from '@/components/lock-screen';
 import { StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
-import { removeItem, setItem } from '@/lib/cache';
+import { getItem, removeItem, setItem } from '@/lib/cache';
 import { SessionProvider } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 
@@ -44,8 +44,10 @@ beforeEach(async () => {
   jest.clearAllMocks();
   await removeItem('settings');
   await removeItem('rtlReload');
+  await removeItem('lock.reloadAt');
   jest.mocked(useLocales).mockReturnValue([{ languageCode: 'en' } as ReturnType<typeof useLocales>[number]]);
   jest.mocked(LocalAuthentication.authenticateAsync).mockResolvedValue({ success: true });
+  jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
   jest.spyOn(I18nManager, 'forceRTL').mockImplementation(() => {});
   jest.spyOn(I18nManager, 'allowRTL').mockImplementation(() => {});
 });
@@ -110,6 +112,13 @@ describe('Lock', () => {
     expect(await screen.findByRole('alert')).toBeOnTheScreen();
     expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(2);
   });
+
+  it('signs out from the lock screen', async () => {
+    jest.mocked(LocalAuthentication.authenticateAsync).mockResolvedValue({ success: false, error: 'user_cancel' });
+    await show(<LockScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(auth.signOut).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('Chat', () => {
@@ -134,7 +143,15 @@ describe('Settings', () => {
   it('shows the app version and the current choices', async () => {
     await show(<Settings />);
     expect(await screen.findByText('0.1.0')).toBeOnTheScreen();
+    expect(screen.getByLabelText('App version: 0.1.0')).toBeOnTheScreen();
+    expect(screen.queryByText(/no screen lock/)).toBeNull();
     expect(screen.getAllByRole('radio', { checked: true }).map((radio) => radio.props.accessibilityLabel)).toEqual(['Device language', 'Device setting']);
+  });
+
+  it('warns when the device has no screen lock', async () => {
+    jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+    await show(<Settings />);
+    expect(await screen.findByText(/This device has no screen lock/)).toBeOnTheScreen();
   });
 
   it('changes the language at once and keeps the choice', async () => {
@@ -150,6 +167,7 @@ describe('Settings', () => {
     expect(await screen.findByRole('header', { name: 'ترتیبات' })).toBeOnTheScreen();
     expect(I18nManager.forceRTL).toHaveBeenLastCalledWith(true);
     expect(reloadAppAsync).toHaveBeenCalledTimes(1);
+    expect(await getItem('lock.reloadAt')).not.toBeNull();
   });
 
   it('does not reload again when the first reload did not flip the layout', async () => {
@@ -196,7 +214,7 @@ describe('StateView', () => {
 });
 
 it('sends the login redirect to the start route, not to a missing screen', () => {
-  expect(redirectSystemPath({ path: 'famashines-ai://auth?code=x&state=y', initial: false })).toBe('/');
-  expect(redirectSystemPath({ path: '/auth?code=x', initial: false })).toBe('/');
+  expect(redirectSystemPath({ path: 'com.famashines.ai:/oauth2redirect?code=x&state=y', initial: false })).toBe('/');
+  expect(redirectSystemPath({ path: '/oauth2redirect?code=x', initial: false })).toBe('/');
   expect(redirectSystemPath({ path: '/settings', initial: false })).toBe('/settings');
 });

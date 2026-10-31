@@ -23,6 +23,8 @@ module.exports = defineConfig([
       'no-restricted-syntax': ['error',
         { selector: 'Literal[value=/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/]', message: 'Use a colour token from src/theme.ts.' },
         { selector: 'Literal[value=/^(rgb|hsl)a?\\(/i]', message: 'Use a colour token from src/theme.ts.' },
+        { selector: 'JSXAttribute[name.name=/^(accessibilityLabel|accessibilityHint|placeholder|title)$/] > Literal', message: 'Use t() for user-facing text.' },
+        { selector: 'JSXAttribute[name.name=/^(accessibilityLabel|accessibilityHint|placeholder|title)$/] > JSXExpressionContainer > :matches(Literal[value=/./], TemplateLiteral)', message: 'Use t() for user-facing text.' },
       ],
     },
   },
