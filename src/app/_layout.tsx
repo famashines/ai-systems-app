@@ -8,6 +8,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LockScreen } from '@/components/lock-screen';
+import { LiveProvider } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider, useSettings } from '@/state/settings';
 
@@ -56,7 +57,9 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <SessionProvider>
         <SettingsProvider>
-          <Shell />
+          <LiveProvider>
+            <Shell />
+          </LiveProvider>
         </SettingsProvider>
       </SessionProvider>
     </SafeAreaProvider>

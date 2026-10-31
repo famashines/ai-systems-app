@@ -84,7 +84,10 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await auth.signOut();
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  const leaving = auth.signOut();
+  await jest.advanceTimersByTimeAsync(auth.signOutWaitMs + auth.requestTimeoutMs);
+  await leaving;
   jest.useRealTimers();
 });
 
@@ -326,4 +329,104 @@ it('removes a refresh token that is written after sign-out started, and revokes 
   expect(mockStore.size).toBe(0);
   expect(await auth.getAccessToken()).toBeNull();
   expect(calls.find((call) => call.url === revocationEndpoint)!.body.get('token')).toBe('refresh-2');
+});
+
+it('keeps a late refresh answer when the session did not change', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let open = () => {};
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>((resolve) => (open = resolve)) });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+
+  const refreshing = auth.refresh().catch((error: unknown) => error);
+  const joined = auth.refresh().catch((error: unknown) => error);
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.requestTimeoutMs);
+  expect(await refreshing).toBeInstanceOf(auth.TimeoutError);
+  expect(await joined).toBeInstanceOf(auth.TimeoutError);
+  expect(tokenCalls()).toHaveLength(2);
+
+  open();
+  while (mockStore.get(auth.refreshTokenKey) !== 'refresh-2') await settle();
+  expect(await auth.getAccessToken()).toBe('access-2');
+  expect(tokenCalls()).toHaveLength(2);
+});
+
+it('joins a refresh that waits for an answer, also after lateAnswerMs, and never sends the same refresh token two times', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let open = () => {};
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>((resolve) => (open = resolve)) }, tokens(3));
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.lateAnswerMs);
+  const second = auth.refresh().catch((error: unknown) => error);
+  await settle();
+  expect(tokenCalls()).toHaveLength(2);
+  open();
+  expect(await second).toBe(true);
+  expect(tokenCalls()).toHaveLength(2);
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-2');
+  await auth.refresh();
+  expect(tokenCalls().at(-1)!.body.get('refresh_token')).toBe('refresh-2');
+});
+
+it('revokes a late refresh token of an ended session at once, and each token of the next session', async () => {
+  const revoked = () => calls.filter((call) => call.url === revocationEndpoint).map((call) => call.body.get('token'));
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let open = () => {};
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>((resolve) => (open = resolve)) });
+  reply(revocationEndpoint, { status: 200, body: {} }, { status: 200, body: {} }, { status: 200, body: {} });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  const leaving = auth.signOut();
+  await jest.advanceTimersByTimeAsync(auth.signOutWaitMs);
+  await leaving;
+  expect(revoked()).toEqual(['refresh-1']);
+
+  open();
+  while (revoked().length < 2) await settle();
+  expect(revoked()).toEqual(['refresh-1', 'refresh-2']);
+  expect(mockStore.size).toBe(0);
+
+  jest.useRealTimers();
+  reply(tokenEndpoint, tokens(3));
+  await auth.signIn();
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
+  await auth.signOut();
+  expect(revoked()).toEqual(['refresh-1', 'refresh-2', 'refresh-3']);
+});
+
+it('revokes every distinct token at sign-out', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let release = () => {};
+  mockWriteGate = new Promise<void>((resolve) => (release = resolve));
+  reply(tokenEndpoint, tokens(2));
+  reply(revocationEndpoint, { status: 200, body: {} }, { status: 200, body: {} });
+  const refreshing = auth.refresh();
+  while (tokenCalls().length < 2) await settle();
+  await settle();
+  const leaving = auth.signOut();
+  await settle();
+  release();
+  await Promise.all([refreshing, leaving]);
+  expect(calls.filter((call) => call.url === revocationEndpoint).map((call) => call.body.get('token')).sort()).toEqual(['refresh-1', 'refresh-2']);
+});
+
+it('gives each new access token to the live connection', async () => {
+  const seen: string[] = [];
+  auth.onAccessToken((token) => seen.push(token));
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1), tokens(2));
+  await auth.signIn();
+  await auth.refresh();
+  expect(seen).toEqual(['access-1', 'access-2']);
 });

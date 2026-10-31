@@ -22,3 +22,7 @@ export function isRTL(language: Language): boolean {
 export function pickLanguage(code: string | null | undefined): Language {
   return languages.find((language) => language === code) ?? 'en';
 }
+
+export function formatTime(language: Language, at: number | string): string {
+  return new Intl.DateTimeFormat(language, { hour: '2-digit', minute: '2-digit' }).format(new Date(at));
+}

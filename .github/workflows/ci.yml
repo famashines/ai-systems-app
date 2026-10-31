@@ -41,11 +41,11 @@ jobs:
 
       - name: Audit dependencies
         env:
-          AUDIT_ALLOW: "1243066"
+          AUDIT_ALLOW: ""
         run: |
           npm audit --json --audit-level=high > "$RUNNER_TEMP/audit.json" || true
           jq -e '.vulnerabilities' "$RUNNER_TEMP/audit.json" > /dev/null
-          found=$(jq -r --arg allow "$AUDIT_ALLOW" '($allow | split(",") | map(tonumber)) as $ok
+          found=$(jq -r --arg allow "$AUDIT_ALLOW" '($allow | split(",") | map(select(. != "") | tonumber)) as $ok
             | [.vulnerabilities[].via[] | objects
             | select(.severity == "high" or .severity == "critical")
             | select(.source as $id | $ok | index($id) | not)
