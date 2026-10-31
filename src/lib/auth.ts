@@ -5,9 +5,12 @@ import { config } from '@/lib/config';
 
 export const refreshTokenKey = 'auth.refreshToken';
 export const refreshEarlyMs = 30_000;
+export const requestTimeoutMs = 15_000;
+export const signOutWaitMs = 10_000;
 
 export class IssuerUnreachableError extends Error {}
 export class IssuerInvalidError extends Error {}
+export class TimeoutError extends Error {}
 
 let discovery: AuthSession.DiscoveryDocument | null = null;
 let access: { token: string; expiresAt: number } | null = null;
@@ -21,6 +24,14 @@ let onEnded = () => {};
 
 export function onSessionEnded(handler: () => void): void {
   onEnded = handler;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let handle: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    handle = setTimeout(() => reject(new TimeoutError(`No answer in ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(handle));
 }
 
 function track<T>(promise: Promise<T>): Promise<T> {
@@ -44,7 +55,7 @@ async function discover(): Promise<AuthSession.DiscoveryDocument> {
   if (!discovery) {
     let doc: AuthSession.DiscoveryDocument;
     try {
-      doc = await AuthSession.fetchDiscoveryAsync(config.oidcIssuer);
+      doc = await withTimeout(AuthSession.fetchDiscoveryAsync(config.oidcIssuer), requestTimeoutMs);
     } catch (cause) {
       throw new IssuerUnreachableError(`Cannot read ${config.oidcIssuer}`, { cause });
     }
@@ -61,6 +72,11 @@ async function keep(tokens: AuthSession.TokenResponse, started: number): Promise
     return false;
   }
   if (tokens.refreshToken) await SecureStore.setItemAsync(refreshTokenKey, tokens.refreshToken);
+  if (started !== generation) {
+    orphan = tokens.refreshToken ?? orphan;
+    await SecureStore.deleteItemAsync(refreshTokenKey);
+    return false;
+  }
   access = { token: tokens.accessToken, expiresAt: Date.now() + (tokens.expiresIn ?? 300) * 1000 };
   clearTimeout(timer);
   timer = setTimeout(() => void refresh().catch(() => {}), Math.max(access.expiresAt - refreshEarlyMs - Date.now(), 0));
@@ -85,14 +101,17 @@ export async function signIn(): Promise<boolean> {
   const result = await request.promptAsync(doc);
   if (result.type === 'error') throw result.error ?? new Error('Authorization failed');
   if (result.type !== 'success' || !request.codeVerifier) return false;
-  const exchange = AuthSession.exchangeCodeAsync(
-    {
-      clientId: config.oidcClientId,
-      redirectUri: config.redirectUri,
-      code: result.params.code ?? '',
-      extraParams: { code_verifier: request.codeVerifier },
-    },
-    doc,
+  const exchange = withTimeout(
+    AuthSession.exchangeCodeAsync(
+      {
+        clientId: config.oidcClientId,
+        redirectUri: config.redirectUri,
+        code: result.params.code ?? '',
+        extraParams: { code_verifier: request.codeVerifier },
+      },
+      doc,
+    ),
+    requestTimeoutMs,
   );
   return track(exchange.then((tokens) => keep(tokens, started)));
 }
@@ -103,7 +122,8 @@ async function runRefresh(): Promise<boolean> {
   if (!refreshToken) return false;
   const doc = await discover();
   try {
-    return await keep(await AuthSession.refreshAsync({ clientId: config.oidcClientId, refreshToken }, doc), started);
+    const tokens = await withTimeout(AuthSession.refreshAsync({ clientId: config.oidcClientId, refreshToken }, doc), requestTimeoutMs);
+    return await keep(tokens, started);
   } catch (error) {
     if (!(error instanceof AuthSession.TokenError)) throw error;
     if (started === generation) {
@@ -138,14 +158,15 @@ export async function signOut(): Promise<void> {
   clearTimeout(timer);
   access = null;
   try {
-    await work;
-    const newest = orphan ?? (await SecureStore.getItemAsync(refreshTokenKey));
-    orphan = null;
+    const stored = await SecureStore.getItemAsync(refreshTokenKey);
     await clear();
+    await withTimeout(work, signOutWaitMs).catch(() => {});
+    const newest = orphan ?? stored;
+    orphan = null;
     if (!newest) return;
     const doc = discovery ?? (await discover().catch(() => null));
     if (doc?.revocationEndpoint) {
-      await AuthSession.revokeAsync({ clientId: config.oidcClientId, token: newest }, doc).catch(() => {});
+      await withTimeout(AuthSession.revokeAsync({ clientId: config.oidcClientId, token: newest }, doc), requestTimeoutMs).catch(() => {});
     }
   } finally {
     closing = false;

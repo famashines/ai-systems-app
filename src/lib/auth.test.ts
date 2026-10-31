@@ -3,10 +3,14 @@ const tokenEndpoint = `${issuer}/protocol/openid-connect/token`;
 const revocationEndpoint = `${issuer}/protocol/openid-connect/revoke`;
 
 const mockStore = new Map<string, string>();
+let mockWriteGate: Promise<void> = Promise.resolve();
 
 jest.mock('expo-secure-store', () => ({
   getItemAsync: async (key: string) => mockStore.get(key) ?? null,
-  setItemAsync: async (key: string, value: string) => void mockStore.set(key, value),
+  setItemAsync: async (key: string, value: string) => {
+    await mockWriteGate;
+    mockStore.set(key, value);
+  },
   deleteItemAsync: async (key: string) => void mockStore.delete(key),
 }));
 
@@ -59,6 +63,7 @@ beforeEach(() => {
   jest.useRealTimers();
   process.env.EXPO_PUBLIC_OIDC_ISSUER = issuer;
   mockStore.clear();
+  mockWriteGate = Promise.resolve();
   replies = {};
   calls = [];
   global.fetch = jest.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -275,4 +280,50 @@ it('makes no token call when the redirect carries a wrong state', async () => {
   await expect(auth.signIn()).rejects.toThrow();
   expect(tokenCalls()).toEqual([]);
   expect(mockStore.size).toBe(0);
+});
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+it('signs out at once when the token endpoint never answers', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>(() => {}) });
+  reply(revocationEndpoint, { status: 200, body: {} });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+
+  const refreshing = auth.refresh().catch((error: unknown) => error);
+  await settle();
+  const leaving = auth.signOut();
+  await settle();
+  expect(mockStore.size).toBe(0);
+  await jest.advanceTimersByTimeAsync(auth.signOutWaitMs);
+  await leaving;
+  expect(calls.find((call) => call.url === revocationEndpoint)!.body.get('token')).toBe('refresh-1');
+
+  await jest.advanceTimersByTimeAsync(auth.requestTimeoutMs);
+  expect(await refreshing).toBeInstanceOf(auth.TimeoutError);
+  expect(mockStore.size).toBe(0);
+});
+
+it('removes a refresh token that is written after sign-out started, and revokes it', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let release = () => {};
+  mockWriteGate = new Promise<void>((resolve) => (release = resolve));
+  reply(tokenEndpoint, tokens(2));
+  reply(revocationEndpoint, { status: 200, body: {} });
+
+  const refreshing = auth.refresh();
+  while (tokenCalls().length < 2) await settle();
+  await settle();
+  const leaving = auth.signOut();
+  await settle();
+  release();
+  await Promise.all([refreshing, leaving]);
+
+  expect(mockStore.size).toBe(0);
+  expect(await auth.getAccessToken()).toBeNull();
+  expect(calls.find((call) => call.url === revocationEndpoint)!.body.get('token')).toBe('refresh-2');
 });
