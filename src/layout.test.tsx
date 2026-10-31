@@ -13,6 +13,9 @@ jest.mock('@/lib/auth', () => ({
   signIn: jest.fn(),
   signOut: jest.fn(async () => {}),
   onSessionEnded: jest.fn(),
+  onAccessToken: jest.fn(),
+  getAccessToken: jest.fn(() => new Promise(() => {})),
+  refresh: jest.fn(),
 }));
 
 const routes = {

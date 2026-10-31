@@ -1,0 +1,70 @@
+appId: com.famashines.ai
+name: Live tasks with an airplane mode gap
+env:
+  API_URL: http://localhost:8080
+  ISSUER: http://localhost:8090/realms/ai-systems
+  TOKEN_CLIENT_ID: ai-systems-test
+  USERNAME: owner
+  PASSWORD: owner
+---
+- runScript:
+    file: run-id.js
+- launchApp:
+    clearState: true
+    stopApp: true
+- tapOn: "Sign in"
+- tapOn:
+    text: "Use without an account"
+    optional: true
+- tapOn:
+    text: "No thanks"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "username"
+    timeout: 30000
+- tapOn:
+    id: "username"
+- inputText: ${USERNAME}
+- tapOn:
+    id: "password"
+- inputText: ${PASSWORD}
+- tapOn:
+    id: "kc-login"
+- extendedWaitUntil:
+    visible:
+      id: "chat-input"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: "Offline. You can send when the connection is back."
+    timeout: 30000
+- tapOn:
+    id: "chat-input"
+- inputText: ${output.online}
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Received"
+    timeout: 15000
+- tapOn: "Tasks"
+- assertVisible: ${output.online}
+- setAirplaneMode: enabled
+- extendedWaitUntil:
+    visible: "Reconnecting"
+    timeout: 60000
+- assertVisible: "Offline, last update.*"
+- runScript:
+    file: submit-task.js
+    env:
+      TEXT: ${output.offline}
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    visible: ${output.offline}
+    timeout: 90000
+- assertNotVisible: "Reconnecting"
+- assertVisible: ${output.online}
+- assertNotVisible:
+    text: ${output.online}
+    index: 1
+- assertNotVisible:
+    text: ${output.offline}
+    index: 1
