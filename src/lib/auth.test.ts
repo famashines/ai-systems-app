@@ -353,29 +353,94 @@ it('keeps a late refresh answer when the session did not change', async () => {
   expect(tokenCalls()).toHaveLength(2);
 });
 
-it('joins a refresh that waits for an answer, also after lateAnswerMs, and never sends the same refresh token two times', async () => {
+const revoked = () => calls.filter((call) => call.url === revocationEndpoint).map((call) => call.body.get('token'));
+
+it('joins a refresh that waits, and gives it up after lateAnswerMs: a new refresh succeeds and the late answer is revoked', async () => {
   reply(discoveryUrl, discoveryDoc);
   reply(tokenEndpoint, tokens(1));
   await auth.signIn();
   let open = () => {};
   reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>((resolve) => (open = resolve)) }, tokens(3));
+  reply(revocationEndpoint, { status: 200, body: {} });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.lateAnswerMs - 1);
+  void auth.refresh().catch(() => {});
+  await settle();
+  expect(tokenCalls()).toHaveLength(2);
+
+  await jest.advanceTimersByTimeAsync(1);
+  expect(await auth.refresh()).toBe(true);
+  expect(tokenCalls()).toHaveLength(3);
+  expect(tokenCalls().at(-1)!.body.get('refresh_token')).toBe('refresh-1');
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
+  expect(await auth.getAccessToken()).toBe('access-3');
+
+  open();
+  while (revoked().length < 1) await settle();
+  expect(revoked()).toEqual(['refresh-2']);
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
+  expect(await auth.getAccessToken()).toBe('access-3');
+});
+
+it('keeps the late answer when no newer token is stored', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let open = () => {};
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>((resolve) => (open = resolve)) }, { status: 503, body: {} });
   jest.useFakeTimers({ doNotFake: ['setImmediate'] });
   void auth.refresh().catch(() => {});
   await settle();
   await jest.advanceTimersByTimeAsync(auth.lateAnswerMs);
-  const second = auth.refresh().catch((error: unknown) => error);
+  await auth.refresh().catch(() => {});
+  open();
+  while (mockStore.get(auth.refreshTokenKey) !== 'refresh-2') await settle();
+  expect(await auth.getAccessToken()).toBe('access-2');
+  expect(revoked()).toEqual([]);
+});
+
+it('gives up a refresh older than 15 s when the app comes to the foreground, not a younger one', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  reply(tokenEndpoint, { ...tokens(2), wait: new Promise<void>(() => {}) }, tokens(3));
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.requestTimeoutMs - 1);
+  auth.resumeRefresh();
+  void auth.refresh().catch(() => {});
   await settle();
   expect(tokenCalls()).toHaveLength(2);
+  await jest.advanceTimersByTimeAsync(1);
+  auth.resumeRefresh();
+  expect(await auth.refresh()).toBe(true);
+  expect(tokenCalls()).toHaveLength(3);
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
+});
+
+it('does not end the session on a late invalid_grant of a request that a newer refresh replaced', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let open = () => {};
+  reply(tokenEndpoint, { status: 400, body: { error: 'invalid_grant' }, wait: new Promise<void>((resolve) => (open = resolve)) }, tokens(3));
+  const ended = jest.fn();
+  auth.onSessionEnded(ended);
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.lateAnswerMs);
+  expect(await auth.refresh()).toBe(true);
   open();
-  expect(await second).toBe(true);
-  expect(tokenCalls()).toHaveLength(2);
-  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-2');
-  await auth.refresh();
-  expect(tokenCalls().at(-1)!.body.get('refresh_token')).toBe('refresh-2');
+  for (let i = 0; i < 10; i += 1) await settle();
+  expect(ended).not.toHaveBeenCalled();
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
 });
 
 it('revokes a late refresh token of an ended session at once, and each token of the next session', async () => {
-  const revoked = () => calls.filter((call) => call.url === revocationEndpoint).map((call) => call.body.get('token'));
   reply(discoveryUrl, discoveryDoc);
   reply(tokenEndpoint, tokens(1));
   await auth.signIn();
