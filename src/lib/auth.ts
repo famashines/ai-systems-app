@@ -16,11 +16,12 @@ export class TimeoutError extends Error {}
 let discovery: AuthSession.DiscoveryDocument | null = null;
 let access: { token: string; expiresAt: number } | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
-let inflight: Promise<boolean> | null = null;
+const waiting = new Map<string, Promise<boolean>>();
 let work: Promise<unknown> = Promise.resolve();
 let generation = 0;
 let closing = false;
-let orphan: string | null = null;
+let collecting = false;
+let orphans: string[] = [];
 let onEnded = () => {};
 let onToken = (_token: string) => {};
 
@@ -66,16 +67,28 @@ async function discover(): Promise<AuthSession.DiscoveryDocument> {
   return discovery;
 }
 
+async function revoke(token: string): Promise<void> {
+  const doc = discovery ?? (await discover().catch(() => null));
+  if (!doc?.revocationEndpoint) return;
+  await withTimeout(AuthSession.revokeAsync({ clientId: config.oidcClientId, token }, doc), requestTimeoutMs).catch(() => {});
+}
+
+function discard(token: string | undefined): void {
+  if (!token) return;
+  if (collecting) orphans.push(token);
+  else void track(revoke(token));
+}
+
 async function keep(tokens: AuthSession.TokenResponse, started: number): Promise<boolean> {
   if (!tokens.accessToken) throw new Error('The token response has no access token');
   if (started !== generation) {
-    orphan = tokens.refreshToken ?? orphan;
+    discard(tokens.refreshToken);
     return false;
   }
   if (tokens.refreshToken) await SecureStore.setItemAsync(refreshTokenKey, tokens.refreshToken);
   if (started !== generation) {
-    orphan = tokens.refreshToken ?? orphan;
-    await SecureStore.deleteItemAsync(refreshTokenKey);
+    if (tokens.refreshToken && (await SecureStore.getItemAsync(refreshTokenKey)) === tokens.refreshToken) await SecureStore.deleteItemAsync(refreshTokenKey);
+    discard(tokens.refreshToken);
     return false;
   }
   access = { token: tokens.accessToken, expiresAt: Date.now() + (tokens.expiresIn ?? 300) * 1000 };
@@ -118,10 +131,7 @@ export async function signIn(): Promise<boolean> {
   return track(exchange.then((tokens) => keep(tokens, started)));
 }
 
-async function runRefresh(): Promise<boolean> {
-  const started = generation;
-  const refreshToken = await SecureStore.getItemAsync(refreshTokenKey);
-  if (!refreshToken) return false;
+async function runRefresh(refreshToken: string, started: number): Promise<boolean> {
   const doc = await discover();
   try {
     const tokens = await AuthSession.refreshAsync({ clientId: config.oidcClientId, refreshToken }, doc);
@@ -136,18 +146,25 @@ async function runRefresh(): Promise<boolean> {
   }
 }
 
+async function startRefresh(): Promise<boolean> {
+  const started = generation;
+  const refreshToken = await SecureStore.getItemAsync(refreshTokenKey);
+  if (!refreshToken) return false;
+  const joined = waiting.get(refreshToken);
+  if (joined) return joined;
+  const mine = runRefresh(refreshToken, started);
+  waiting.set(refreshToken, mine);
+  const done = () => {
+    if (waiting.get(refreshToken) === mine) waiting.delete(refreshToken);
+  };
+  mine.then(done, done);
+  void track(withTimeout(mine, lateAnswerMs)).catch(() => {});
+  return mine;
+}
+
 export function refresh(): Promise<boolean> {
   if (closing) return Promise.resolve(false);
-  if (!inflight) {
-    const mine = runRefresh();
-    inflight = mine;
-    void track(withTimeout(mine, lateAnswerMs))
-      .catch(() => {})
-      .finally(() => {
-        if (inflight === mine) inflight = null;
-      });
-  }
-  return withTimeout(inflight, requestTimeoutMs);
+  return withTimeout(startRefresh(), requestTimeoutMs);
 }
 
 export async function restore(): Promise<boolean> {
@@ -162,6 +179,7 @@ export async function getAccessToken(): Promise<string | null> {
 
 export async function signOut(): Promise<void> {
   closing = true;
+  collecting = true;
   generation += 1;
   clearTimeout(timer);
   access = null;
@@ -169,14 +187,12 @@ export async function signOut(): Promise<void> {
     const stored = await SecureStore.getItemAsync(refreshTokenKey);
     await clear();
     await withTimeout(work, signOutWaitMs).catch(() => {});
-    const newest = orphan ?? stored;
-    orphan = null;
-    if (!newest) return;
-    const doc = discovery ?? (await discover().catch(() => null));
-    if (doc?.revocationEndpoint) {
-      await withTimeout(AuthSession.revokeAsync({ clientId: config.oidcClientId, token: newest }, doc), requestTimeoutMs).catch(() => {});
-    }
+    const tokens = [...new Set([...orphans, stored].filter((token): token is string => !!token))];
+    orphans = [];
+    collecting = false;
+    await Promise.all(tokens.map(revoke));
   } finally {
+    collecting = false;
     closing = false;
   }
 }
