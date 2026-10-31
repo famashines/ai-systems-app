@@ -43,7 +43,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 function serial<T>(task: () => Promise<T>): Promise<T> {
-  const result = storing.then(task);
+  const result = storing.then(() => withTimeout(task(), requestTimeoutMs));
   storing = result.catch(() => {});
   return result;
 }
@@ -153,11 +153,12 @@ async function runRefresh(refreshToken: string, started: number): Promise<boolea
     return await keep(tokens, started, refreshToken);
   } catch (error) {
     if (!(error instanceof AuthSession.TokenError)) throw error;
-    if (started === generation && !(await replaced(refreshToken))) {
+    await serial(async () => {
+      if (started !== generation || (await replaced(refreshToken))) return;
       generation += 1;
       await clear();
       onEnded();
-    }
+    });
     return false;
   }
 }
