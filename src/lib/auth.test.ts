@@ -440,6 +440,115 @@ it('does not end the session on a late invalid_grant of a request that a newer r
   expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
 });
 
+type Answer = { status: number; body: object };
+
+async function twoRefreshesWithOneToken(late: Answer, next: Answer) {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let openLate = () => {};
+  let openNext = () => {};
+  reply(tokenEndpoint, { ...late, wait: new Promise<void>((resolve) => (openLate = resolve)) }, { ...next, wait: new Promise<void>((resolve) => (openNext = resolve)) });
+  reply(revocationEndpoint, { status: 200, body: {} });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  void auth.refresh().catch(() => {});
+  await settle();
+  await jest.advanceTimersByTimeAsync(auth.lateAnswerMs);
+  void auth.refresh().catch(() => {});
+  while (tokenCalls().length < 3) await settle();
+  expect(tokenCalls().map((call) => call.body.get('refresh_token'))).toEqual([null, 'refresh-1', 'refresh-1']);
+  let release = () => {};
+  mockWriteGate = new Promise<void>((resolve) => (release = resolve));
+  return { openLate, openNext, release };
+}
+
+const settleMany = async () => {
+  for (let i = 0; i < 20; i += 1) await settle();
+};
+
+it('keeps the rotated token when invalid_grant for the old token comes while the rotated token is written', async () => {
+  const ended = jest.fn();
+  auth.onSessionEnded(ended);
+  const { openLate, openNext, release } = await twoRefreshesWithOneToken(tokens(2), { status: 400, body: { error: 'invalid_grant' } });
+  openLate();
+  await settleMany();
+  openNext();
+  await settleMany();
+  release();
+  await settleMany();
+  expect(ended).not.toHaveBeenCalled();
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-2');
+  expect(await auth.getAccessToken()).toBe('access-2');
+  expect(revoked()).toEqual([]);
+});
+
+it('keeps one of two refresh answers that come in the same tick, and revokes the other', async () => {
+  const { openLate, openNext, release } = await twoRefreshesWithOneToken(tokens(2), tokens(3));
+  openLate();
+  openNext();
+  await settleMany();
+  release();
+  await settleMany();
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-2');
+  expect(await auth.getAccessToken()).toBe('access-2');
+  expect(revoked()).toEqual(['refresh-3']);
+});
+
+it('releases the token store after a write that never ends, so sign-out and the next sign-in work', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  mockWriteGate = new Promise<void>(() => {});
+  reply(tokenEndpoint, tokens(2));
+  reply(revocationEndpoint, { status: 200, body: {} }, { status: 200, body: {} });
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  const refreshing = auth.refresh().catch((error: unknown) => error);
+  while (tokenCalls().length < 2) await settle();
+  await settleMany();
+
+  const leaving = auth.signOut();
+  await jest.advanceTimersByTimeAsync(auth.signOutWaitMs);
+  await leaving;
+  expect(mockStore.size).toBe(0);
+
+  mockWriteGate = Promise.resolve();
+  reply(tokenEndpoint, tokens(3));
+  const signing = auth.signIn();
+  await jest.advanceTimersByTimeAsync(auth.requestTimeoutMs);
+  expect(await refreshing).toBeInstanceOf(auth.TimeoutError);
+  expect(await signing).toBe(true);
+  expect(mockStore.get(auth.refreshTokenKey)).toBe('refresh-3');
+  expect(await auth.getAccessToken()).toBe('access-3');
+});
+
+it('removes and revokes a token whose slow write ends after invalid_grant ended the session', async () => {
+  reply(discoveryUrl, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+  await auth.signIn();
+  let release = () => {};
+  mockWriteGate = new Promise<void>((resolve) => (release = resolve));
+  reply(tokenEndpoint, tokens(2), { status: 400, body: { error: 'invalid_grant' } });
+  reply(revocationEndpoint, { status: 200, body: {} });
+  const ended = jest.fn();
+  auth.onSessionEnded(ended);
+  jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+  const slow = auth.refresh().catch((error: unknown) => error);
+  while (tokenCalls().length < 2) await settle();
+  await jest.advanceTimersByTimeAsync(auth.requestTimeoutMs);
+  expect(await slow).toBeInstanceOf(auth.TimeoutError);
+
+  expect(await auth.refresh()).toBe(false);
+  expect(tokenCalls().at(-1)!.body.get('refresh_token')).toBe('refresh-1');
+  expect(ended).toHaveBeenCalledTimes(1);
+  expect(mockStore.size).toBe(0);
+
+  release();
+  await settleMany();
+  expect(mockStore.size).toBe(0);
+  expect(await auth.getAccessToken()).toBeNull();
+  expect(revoked()).toEqual(['refresh-2']);
+});
+
 it('revokes a late refresh token of an ended session at once, and each token of the next session', async () => {
   reply(discoveryUrl, discoveryDoc);
   reply(tokenEndpoint, tokens(1));

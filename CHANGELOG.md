@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- A late token answer can no longer store a refresh token after an
+  `invalid_grant` ended the session. The end of a session now starts a
+  new session generation before it deletes the tokens.
+- Two token answers in the same moment write to secure storage one at a
+  time. The first is kept; the second is revoked. The end of a session
+  uses the same queue, so a valid rotated token is kept when a late
+  `invalid_grant` for the old token comes. A write that does not end in
+  15 s releases the queue.
+- After any OAuth error on refresh, the login screen shows "Your session
+  ended. Sign in again." in English, German and Urdu. The live connection
+  no longer removes this message when it signs out.
 - A token refresh with no answer no longer blocks refresh for ever. After
   60 s, or at a foreground event when it is older than 15 s, the app
   sends one new refresh with the same token. A late answer is revoked

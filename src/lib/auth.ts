@@ -18,6 +18,7 @@ let access: { token: string; expiresAt: number } | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
 const waiting = new Map<string, { answer: Promise<boolean>; at: number }>();
 let work: Promise<unknown> = Promise.resolve();
+let storing: Promise<unknown> = Promise.resolve();
 let generation = 0;
 let closing = false;
 let collecting = false;
@@ -39,6 +40,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
     handle = setTimeout(() => reject(new TimeoutError(`No answer in ${ms} ms`)), ms);
   });
   return Promise.race([promise, late]).finally(() => clearTimeout(handle));
+}
+
+function serial<T>(task: () => Promise<T>): Promise<T> {
+  const result = storing.then(() => withTimeout(task(), requestTimeoutMs));
+  storing = result.catch(() => {});
+  return result;
 }
 
 function track<T>(promise: Promise<T>): Promise<T> {
@@ -83,7 +90,11 @@ async function replaced(used: string | undefined): Promise<boolean> {
   return used !== undefined && (await SecureStore.getItemAsync(refreshTokenKey)) !== used;
 }
 
-async function keep(tokens: AuthSession.TokenResponse, started: number, used?: string): Promise<boolean> {
+function keep(tokens: AuthSession.TokenResponse, started: number, used?: string): Promise<boolean> {
+  return serial(() => store(tokens, started, used));
+}
+
+async function store(tokens: AuthSession.TokenResponse, started: number, used?: string): Promise<boolean> {
   if (!tokens.accessToken) throw new Error('The token response has no access token');
   if (started !== generation || (await replaced(used))) {
     discard(tokens.refreshToken);
@@ -142,10 +153,12 @@ async function runRefresh(refreshToken: string, started: number): Promise<boolea
     return await keep(tokens, started, refreshToken);
   } catch (error) {
     if (!(error instanceof AuthSession.TokenError)) throw error;
-    if (started === generation && !(await replaced(refreshToken))) {
+    await serial(async () => {
+      if (started !== generation || (await replaced(refreshToken))) return;
+      generation += 1;
       await clear();
       onEnded();
-    }
+    });
     return false;
   }
 }
