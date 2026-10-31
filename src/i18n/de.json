@@ -14,6 +14,7 @@
   "lock.button": "Entsperren",
   "lock.prompt": "AI Systems entsperren",
   "lock.failed": "Das Entsperren wurde nicht abgeschlossen. Versuchen Sie es erneut.",
+  "lock.signOutFailed": "Die Abmeldung wurde nicht abgeschlossen. Versuchen Sie es erneut.",
   "tabs.chat": "Chat",
   "tabs.tasks": "Aufgaben",
   "tabs.settings": "Einstellungen",

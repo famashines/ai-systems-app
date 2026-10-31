@@ -14,6 +14,7 @@
   "lock.button": "Unlock",
   "lock.prompt": "Unlock AI Systems",
   "lock.failed": "Unlock did not complete. Try again.",
+  "lock.signOutFailed": "Sign-out did not complete. Try again.",
   "tabs.chat": "Chat",
   "tabs.tasks": "Tasks",
   "tabs.settings": "Settings",

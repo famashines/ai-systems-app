@@ -11,6 +11,7 @@ export function LockScreen() {
   const { unlock, signOut } = useSession();
   const [busy, setBusy] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [leaving, setLeaving] = useState<'idle' | 'busy' | 'failed'>('idle');
 
   const prompt = () =>
     void unlock(t('lock.prompt')).then((ok) => {
@@ -22,6 +23,11 @@ export function LockScreen() {
     setBusy(true);
     setFailed(false);
     prompt();
+  };
+
+  const leave = () => {
+    setLeaving('busy');
+    signOut().catch(() => setLeaving('failed'));
   };
 
   const firstPrompt = useEffectEvent(prompt);
@@ -43,8 +49,13 @@ export function LockScreen() {
           {t('lock.failed')}
         </AppText>
       ) : null}
-      <Button label={failed ? t('common.retry') : t('lock.button')} onPress={attempt} busy={busy} />
-      <Button label={t('settings.signOut')} onPress={() => void signOut().catch(() => {})} variant="tonal" />
+      {leaving === 'failed' ? (
+        <AppText color="error" accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.center}>
+          {t('lock.signOutFailed')}
+        </AppText>
+      ) : null}
+      <Button label={failed ? t('common.retry') : t('lock.button')} onPress={attempt} busy={busy} disabled={leaving === 'busy'} />
+      <Button label={t('settings.signOut')} onPress={leave} variant="tonal" busy={leaving === 'busy'} />
     </View>
   );
 }

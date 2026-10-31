@@ -118,11 +118,25 @@ describe('Lock', () => {
     expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledTimes(2);
   });
 
-  it('signs out from the lock screen', async () => {
+  it('signs out from the lock screen and shows the busy state', async () => {
     jest.mocked(LocalAuthentication.authenticateAsync).mockResolvedValue({ success: false, error: 'user_cancel' });
+    let finish = () => {};
+    jest.mocked(auth.signOut).mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)));
     await show(<LockScreen />);
     await fireEvent.press(await screen.findByRole('button', { name: 'Sign out' }));
     expect(auth.signOut).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeBusy();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeDisabled();
+    await act(async () => finish());
+  });
+
+  it('shows an error when the sign-out from the lock screen fails', async () => {
+    jest.mocked(LocalAuthentication.authenticateAsync).mockResolvedValue({ success: false, error: 'user_cancel' });
+    jest.mocked(auth.signOut).mockRejectedValueOnce(new Error('disk'));
+    await show(<LockScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByText('Sign-out did not complete. Try again.')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   });
 });
 
