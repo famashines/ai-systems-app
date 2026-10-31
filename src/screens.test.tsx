@@ -3,7 +3,7 @@ import { reloadAppAsync } from 'expo';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useLocales } from 'expo-localization';
 import type { ReactElement } from 'react';
-import { I18nManager } from 'react-native';
+import { I18nManager, Text } from 'react-native';
 
 import Chat from '@/app/(tabs)/index';
 import Settings from '@/app/(tabs)/settings';
@@ -14,7 +14,7 @@ import { LockScreen } from '@/components/lock-screen';
 import { StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
-import { SessionProvider } from '@/state/session';
+import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 
 jest.mock('expo', () => ({ ...jest.requireActual<object>('expo'), reloadAppAsync: jest.fn(async () => {}) }));
@@ -32,11 +32,16 @@ jest.mock('@/lib/auth', () => {
   };
 });
 
+function Probe() {
+  const { status, locked } = useSession();
+  return <Text>{`${status} ${locked ? 'locked' : 'open'}`}</Text>;
+}
+
 async function show(ui: ReactElement) {
   await render(
-    <SettingsProvider>
-      <SessionProvider>{ui}</SessionProvider>
-    </SettingsProvider>,
+    <SessionProvider>
+      <SettingsProvider>{ui}</SettingsProvider>
+    </SessionProvider>,
   );
 }
 
@@ -161,13 +166,28 @@ describe('Settings', () => {
     expect(reloadAppAsync).not.toHaveBeenCalled();
   });
 
-  it('reloads once to flip the layout when Urdu is chosen', async () => {
+  it('reloads once to flip the layout when Urdu is chosen, and marks the reload so it does not lock', async () => {
+    jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
     await show(<Settings />);
     await fireEvent.press(await screen.findByRole('radio', { name: 'اردو' }));
     expect(await screen.findByRole('header', { name: 'ترتیبات' })).toBeOnTheScreen();
     expect(I18nManager.forceRTL).toHaveBeenLastCalledWith(true);
     expect(reloadAppAsync).toHaveBeenCalledTimes(1);
     expect(await getItem('lock.reloadAt')).not.toBeNull();
+  });
+
+  it('does not mark the reload when the language is picked while locked', async () => {
+    await show(
+      <>
+        <Probe />
+        <Settings />
+      </>,
+    );
+    expect(await screen.findByText('signedIn locked')).toBeOnTheScreen();
+    await fireEvent.press(await screen.findByRole('radio', { name: 'اردو' }));
+    await screen.findByRole('header', { name: 'ترتیبات' });
+    expect(reloadAppAsync).toHaveBeenCalledTimes(1);
+    expect(await getItem('lock.reloadAt')).toBeNull();
   });
 
   it('does not reload again when the first reload did not flip the layout', async () => {
@@ -196,6 +216,29 @@ describe('Settings', () => {
     await show(<Settings />);
     await fireEvent.press(await screen.findByRole('button', { name: 'Sign out' }));
     expect(await screen.findByText('Something went wrong.')).toBeOnTheScreen();
+  });
+});
+
+describe('Lock and language', () => {
+  it('keeps the lock when the device language changes to Urdu while locked', async () => {
+    await show(<Probe />);
+    expect(await screen.findByText('signedIn locked')).toBeOnTheScreen();
+
+    jest.mocked(useLocales).mockReturnValue([{ languageCode: 'ur' } as ReturnType<typeof useLocales>[number]]);
+    await screen.rerender(
+      <SessionProvider>
+        <SettingsProvider>
+          <Probe />
+        </SettingsProvider>
+      </SessionProvider>,
+    );
+    await act(async () => {});
+    expect(reloadAppAsync).toHaveBeenCalledTimes(1);
+    expect(await getItem('lock.reloadAt')).toBeNull();
+
+    await screen.unmount();
+    await show(<Probe />);
+    expect(await screen.findByText('signedIn locked')).toBeOnTheScreen();
   });
 });
 

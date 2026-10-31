@@ -54,11 +54,11 @@ function Shell() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <SettingsProvider>
-        <SessionProvider>
+      <SessionProvider>
+        <SettingsProvider>
           <Shell />
-        </SessionProvider>
-      </SettingsProvider>
+        </SettingsProvider>
+      </SessionProvider>
     </SafeAreaProvider>
   );
 }

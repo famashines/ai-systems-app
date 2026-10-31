@@ -1,11 +1,12 @@
 import { reloadAppAsync } from 'expo';
 import { useLocales } from 'expo-localization';
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { I18nManager, useColorScheme } from 'react-native';
 
 import { isRTL, pickLanguage, translate, type Key, type Language, type Params } from '@/i18n';
 import { getItem, removeItem, setItem } from '@/lib/cache';
 import { markAppReload } from '@/lib/lock';
+import { useSession } from '@/state/session';
 import { darkColors, lightColors, type Colors } from '@/theme';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
@@ -27,19 +28,21 @@ type Value = {
 
 const SettingsContext = createContext<Value | null>(null);
 
-export async function applyDirection(language: Language): Promise<void> {
+export async function applyDirection(language: Language, chosenInApp = false): Promise<void> {
   const rtl = isRTL(language);
   I18nManager.allowRTL(rtl);
   I18nManager.forceRTL(rtl);
   if (I18nManager.isRTL === rtl) return removeItem(reloadKey);
   if ((await getItem<boolean>(reloadKey))?.value === rtl) return;
   await setItem(reloadKey, rtl);
-  await markAppReload();
+  if (chosenInApp) await markAppReload();
   await reloadAppAsync('Layout direction changed');
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const { locked } = useSession();
+  const chosenInApp = useRef(false);
   const scheme = useColorScheme();
   const deviceLanguage = pickLanguage(useLocales()[0]?.languageCode);
   const choice = settings?.language ?? 'system';
@@ -52,7 +55,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (settings) void applyDirection(language).catch(() => {});
+    if (!settings) return;
+    const chosen = chosenInApp.current;
+    chosenInApp.current = false;
+    void applyDirection(language, chosen).catch(() => {});
   }, [settings, language]);
 
   if (!settings) return null;
@@ -62,6 +68,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     settings,
     update: async (patch) => {
       const next = { ...settings, ...patch };
+      if (next.language !== settings.language) chosenInApp.current = !locked;
       setSettings(next);
       await setItem(settingsKey, next);
     },
