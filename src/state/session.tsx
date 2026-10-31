@@ -10,7 +10,7 @@ type Value = {
   status: Status;
   locked: boolean;
   deviceSecure: boolean;
-  ended: 'refused' | null;
+  ended: 'refused' | 'expired' | null;
   signIn: () => Promise<void>;
   signOut: (reason?: 'refused') => Promise<void>;
   unlock: (prompt: string) => Promise<boolean>;
@@ -26,12 +26,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');
   const [locked, setLocked] = useState(false);
   const [deviceSecure, setDeviceSecure] = useState(true);
-  const [ended, setEnded] = useState<'refused' | null>(null);
+  const [ended, setEnded] = useState<'refused' | 'expired' | null>(null);
   const lockable = useRef(true);
   const backgroundAt = useRef<number | null>(null);
 
   useEffect(() => {
     auth.onSessionEnded(() => {
+      setEnded('expired');
       setLocked(false);
       setStatus('signedOut');
     });

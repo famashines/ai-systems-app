@@ -87,8 +87,11 @@ reason in this section.
 - Login: code flow with PKCE. The refresh token is only in
   `expo-secure-store`. The access token is only in memory and is refreshed
   30 seconds before it expires. An OAuth error from the token endpoint
-  ends the session; a network error or a timeout (15 seconds for each
-  token, discovery and revoke request) keeps it. Sign out deletes both
+  ends the session, and the login screen shows "Your session ended";
+  a network error or a timeout (15 seconds for each
+  token, discovery and revoke request) keeps it. Token answers write to
+  secure storage one at a time; a late answer for an ended session or an
+  older token is revoked, not stored. Sign out deletes both
   tokens first, then waits at most 10 seconds for a running token request
   and revokes the newest refresh token.
 - Lock: the app locks at start with a stored session, and after 5 minutes

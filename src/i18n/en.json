@@ -68,5 +68,6 @@
   "taskStatus.cancelled": "Cancelled",
   "taskStatus.rejected": "Rejected",
   "tasks.meta": "{status} · {time}",
-  "login.refused": "The server did not accept your sign-in. Sign in again."
+  "login.refused": "The server did not accept your sign-in. Sign in again.",
+  "login.ended": "Your session ended. Sign in again."
 }

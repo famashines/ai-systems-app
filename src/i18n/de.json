@@ -68,5 +68,6 @@
   "taskStatus.cancelled": "Abgebrochen",
   "taskStatus.rejected": "Abgelehnt",
   "tasks.meta": "{status} · {time}",
-  "login.refused": "Der Server hat Ihre Anmeldung nicht angenommen. Melden Sie sich erneut an."
+  "login.refused": "Der Server hat Ihre Anmeldung nicht angenommen. Melden Sie sich erneut an.",
+  "login.ended": "Ihre Sitzung ist beendet. Melden Sie sich erneut an."
 }

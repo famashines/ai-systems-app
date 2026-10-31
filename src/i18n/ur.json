@@ -68,5 +68,6 @@
   "taskStatus.cancelled": "منسوخ",
   "taskStatus.rejected": "مسترد",
   "tasks.meta": "{status} · {time}",
-  "login.refused": "سرور نے آپ کا سائن ان قبول نہیں کیا۔ دوبارہ سائن ان کریں۔"
+  "login.refused": "سرور نے آپ کا سائن ان قبول نہیں کیا۔ دوبارہ سائن ان کریں۔",
+  "login.ended": "آپ کا سیشن ختم ہو گیا۔ دوبارہ سائن ان کریں۔"
 }

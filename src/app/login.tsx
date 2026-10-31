@@ -29,9 +29,9 @@ export default function Login() {
       <View style={styles.body}>
         <AppText variant="headline">{t('login.title')}</AppText>
         <AppText color="onSurfaceVariant">{t('login.body')}</AppText>
-        {ended === 'refused' && state === 'idle' ? (
+        {ended && state === 'idle' ? (
           <AppText color="error" accessibilityRole="alert" accessibilityLiveRegion="polite">
-            {t('login.refused')}
+            {t(ended === 'refused' ? 'login.refused' : 'login.ended')}
           </AppText>
         ) : null}
         {state === 'unreachable' || state === 'failed' ? (

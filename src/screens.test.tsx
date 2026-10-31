@@ -115,6 +115,18 @@ describe('Login', () => {
     expect(I18nManager.forceRTL).toHaveBeenLastCalledWith(true);
     expect(I18nManager.allowRTL).toHaveBeenLastCalledWith(true);
   });
+
+  it.each([
+    ['en', 'Your session ended. Sign in again.'],
+    ['de', 'Ihre Sitzung ist beendet. Melden Sie sich erneut an.'],
+    ['ur', 'آپ کا سیشن ختم ہو گیا۔ دوبارہ سائن ان کریں۔'],
+  ])('tells in %s that the session ended when the server refuses the refresh token', async (languageCode, text) => {
+    jest.mocked(useLocales).mockReturnValue([{ languageCode } as ReturnType<typeof useLocales>[number]]);
+    await show(<Login />);
+    const ended = jest.mocked(auth.onSessionEnded).mock.calls.at(-1)![0];
+    await act(async () => ended());
+    expect(await screen.findByRole('alert')).toHaveTextContent(text);
+  });
 });
 
 describe('Lock', () => {
