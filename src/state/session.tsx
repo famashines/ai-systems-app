@@ -2,13 +2,14 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { AppState } from 'react-native';
 
 import * as auth from '@/lib/auth';
-import { canLock, shouldLock, unlock } from '@/lib/lock';
+import { canLock, shouldLock, takeAppReload, unlock } from '@/lib/lock';
 
 export type Status = 'loading' | 'signedOut' | 'signedIn';
 
 type Value = {
   status: Status;
   locked: boolean;
+  deviceSecure: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   unlock: (prompt: string) => Promise<boolean>;
@@ -16,13 +17,15 @@ type Value = {
 
 const SessionContext = createContext<Value | null>(null);
 
-async function lockIfPossible(lock: () => void): Promise<void> {
-  if (await canLock().catch(() => false)) lock();
+function canLockOrTrue(): Promise<boolean> {
+  return canLock().catch(() => true);
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');
   const [locked, setLocked] = useState(false);
+  const [deviceSecure, setDeviceSecure] = useState(true);
+  const lockable = useRef(true);
   const backgroundAt = useRef<number | null>(null);
 
   useEffect(() => {
@@ -31,8 +34,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setStatus('signedOut');
     });
     void (async () => {
-      const signedIn = await auth.restore().catch(() => false);
-      if (signedIn) await lockIfPossible(() => setLocked(true));
+      const [signedIn, secure, reloaded] = await Promise.all([
+        auth.restore().catch(() => false),
+        canLockOrTrue(),
+        takeAppReload().catch(() => false),
+      ]);
+      lockable.current = secure;
+      setDeviceSecure(secure);
+      if (signedIn && secure && !reloaded) setLocked(true);
       setStatus(signedIn ? 'signedIn' : 'signedOut');
     })();
   }, []);
@@ -43,7 +52,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (state !== 'active') return;
       const due = shouldLock(backgroundAt.current, Date.now());
       backgroundAt.current = null;
-      if (due && status === 'signedIn') void lockIfPossible(() => setLocked(true));
+      if (due && status === 'signedIn' && lockable.current) setLocked(true);
+      void canLockOrTrue().then((secure) => {
+        lockable.current = secure;
+        setDeviceSecure(secure);
+      });
     });
     return () => subscription.remove();
   }, [status]);
@@ -51,6 +64,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value: Value = {
     status,
     locked,
+    deviceSecure,
     signIn: async () => {
       if (await auth.signIn()) setStatus('signedIn');
     },

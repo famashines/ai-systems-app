@@ -3,8 +3,9 @@ import { useLocales } from 'expo-localization';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { I18nManager, useColorScheme } from 'react-native';
 
-import { isRTL, pickLanguage, translate, type Key, type Language } from '@/i18n';
+import { isRTL, pickLanguage, translate, type Key, type Language, type Params } from '@/i18n';
 import { getItem, removeItem, setItem } from '@/lib/cache';
+import { markAppReload } from '@/lib/lock';
 import { darkColors, lightColors, type Colors } from '@/theme';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
@@ -19,7 +20,7 @@ type Value = {
   settings: Settings;
   update: (patch: Partial<Settings>) => Promise<void>;
   language: Language;
-  t: (key: Key) => string;
+  t: (key: Key, params?: Params) => string;
   colors: Colors;
   dark: boolean;
 };
@@ -33,6 +34,7 @@ export async function applyDirection(language: Language): Promise<void> {
   if (I18nManager.isRTL === rtl) return removeItem(reloadKey);
   if ((await getItem<boolean>(reloadKey))?.value === rtl) return;
   await setItem(reloadKey, rtl);
+  await markAppReload();
   await reloadAppAsync('Layout direction changed');
 }
 
@@ -64,7 +66,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       await setItem(settingsKey, next);
     },
     language,
-    t: (key) => translate(language, key),
+    t: (key, params) => translate(language, key, params),
     colors: dark ? darkColors : lightColors,
     dark,
   };

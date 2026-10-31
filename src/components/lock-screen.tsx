@@ -8,7 +8,7 @@ import { spacing } from '@/theme';
 
 export function LockScreen() {
   const { t, colors } = useSettings();
-  const { unlock } = useSession();
+  const { unlock, signOut } = useSession();
   const [busy, setBusy] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -44,6 +44,7 @@ export function LockScreen() {
         </AppText>
       ) : null}
       <Button label={failed ? t('common.retry') : t('lock.button')} onPress={attempt} busy={busy} />
+      <Button label={t('settings.signOut')} onPress={() => void signOut().catch(() => {})} variant="tonal" />
     </View>
   );
 }
