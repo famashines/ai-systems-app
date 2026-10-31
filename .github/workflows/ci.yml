@@ -12,10 +12,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  GITLEAKS_VERSION: 8.30.1
-  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-
 jobs:
   verify:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -26,22 +22,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Scan the git history for secrets
+        uses: docker://ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: safe.directory
+          GIT_CONFIG_VALUE_0: /github/workspace
+        with:
+          args: git --redact --verbose --no-banner /github/workspace
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      - name: Install gitleaks
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
-
-      - name: Scan the git history for secrets
-        run: $RUNNER_TEMP/gitleaks git --redact --no-banner .
-
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit dependencies
+        env:
+          AUDIT_ALLOW: "1243066"
+        run: |
+          npm audit --json --audit-level=high > "$RUNNER_TEMP/audit.json" || true
+          jq -e '.vulnerabilities' "$RUNNER_TEMP/audit.json" > /dev/null
+          found=$(jq -r --arg allow "$AUDIT_ALLOW" '($allow | split(",") | map(tonumber)) as $ok
+            | [.vulnerabilities[].via[] | objects
+            | select(.severity == "high" or .severity == "critical")
+            | select(.source as $id | $ok | index($id) | not)
+            | "\(.source) \(.severity) \(.title) \(.url)"] | unique | .[]' "$RUNNER_TEMP/audit.json")
+          if [ -n "$found" ]; then echo "$found"; exit 1; fi
 
       - name: Verify source
         run: npm run verify
@@ -53,7 +62,9 @@ jobs:
         run: npx --yes expo-doctor@1.20.4
 
       - name: Export Android bundle
-        run: npx expo export --platform android --output-dir "$RUNNER_TEMP/export"
+        run: npx expo export --platform android --output-dir dist/android
 
       - name: Scan the Android bundle for secrets
-        run: $RUNNER_TEMP/gitleaks dir --redact --no-banner "$RUNNER_TEMP/export"
+        uses: docker://ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        with:
+          args: dir --redact --verbose --no-banner /github/workspace/dist/android
