@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Scan the git history for secrets
+        uses: docker://ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: safe.directory
+          GIT_CONFIG_VALUE_0: /github/workspace
+        with:
+          args: git --redact --verbose --no-banner /github/workspace
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        env:
+          AUDIT_ALLOW: "1243066"
+        run: |
+          npm audit --json --audit-level=high > "$RUNNER_TEMP/audit.json" || true
+          jq -e '.vulnerabilities' "$RUNNER_TEMP/audit.json" > /dev/null
+          found=$(jq -r --arg allow "$AUDIT_ALLOW" '($allow | split(",") | map(tonumber)) as $ok
+            | [.vulnerabilities[].via[] | objects
+            | select(.severity == "high" or .severity == "critical")
+            | select(.source as $id | $ok | index($id) | not)
+            | "\(.source) \(.severity) \(.title) \(.url)"] | unique | .[]' "$RUNNER_TEMP/audit.json")
+          if [ -n "$found" ]; then echo "$found"; exit 1; fi
+
+      - name: Verify source
+        run: npm run verify
+
+      - name: Verify Expo dependencies
+        run: npx expo install --check
+
+      - name: Verify Expo project
+        run: npx --yes expo-doctor@1.20.4
+
+      - name: Export Android bundle
+        run: npx expo export --platform android --output-dir dist/android
+
+      - name: Scan the Android bundle for secrets
+        uses: docker://ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        with:
+          args: dir --redact --verbose --no-banner /github/workspace/dist/android
