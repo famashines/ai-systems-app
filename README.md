@@ -314,9 +314,12 @@ app                                   api-gateway -> ai-proxy
  | POST .../messages { text, newTask, model, effort? } ---------------->
 ```
 
-- The model chip in the composer shows the short model name (the text
-  after "Provider: ") and, on a second line, the effort, for example
-  "GPT-5" and "High", or only "Auto". TalkBack reads "Model <name>, effort <effort>" and a hint.
+- The model chip in the composer shows a short model name and, on a
+  second line, the effort, for example "GPT-5" and "High", or only
+  "Auto". The short name is the text after "Provider: ". When that text
+  is longer than 12 characters, the chip shows only its last two words
+  ("Anthropic: Claude Opus 5.5" shows as "Opus 5.5"). The picker list
+  and the TalkBack label have the full name. TalkBack reads "Model <name>, effort <effort>" and a hint.
 - The chip opens the picker (a modal with a title): a search field (it
   filters by name or id), the radio group "Model" (Auto and the list, in a
   `FlatList`, because the list can have about 400 models) and the radio
@@ -327,8 +330,9 @@ app                                   api-gateway -> ai-proxy
   closes the picker.
 - When the read fails, the picker shows "The model list did not load."
   with Try again.
-- A model change keeps the effort only when the new model has it, else
-  the effort goes back to Auto. A choice of Auto for the model also sets
+- A model change keeps the effort in use only when the new model has it,
+  else the effort goes back to Auto. A saved effort that is not in use
+  (because the saved model is not in the list) does not come back. A choice of Auto for the model also sets
   the effort to Auto.
 - The choice is kept in the settings (sqlite cache key `settings`) and
   stays after sign-out.

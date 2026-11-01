@@ -19,7 +19,8 @@ export function choiceOf(items: ModelListItemV1[], model: string | null, effort:
 }
 
 export function shortName(name: string): string {
-  return name.slice(name.indexOf(': ') + 1).trim() || name;
+  const rest = name.slice(name.indexOf(': ') + 1).trim() || name;
+  return rest.length > 12 ? rest.split(/\s+/).slice(-2).join(' ') : rest;
 }
 
 export function useChoice(): ModelChoice {
@@ -74,7 +75,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   };
   const close = () => setOpen(false);
   const pick = (next: ModelListItemV1 | null) => {
-    const effort = next && settings.effort && next.efforts.includes(settings.effort) ? settings.effort : null;
+    const effort = next && choice.effort && next.efforts.includes(choice.effort) ? choice.effort : null;
     void update({ model: next?.id ?? null, effort });
   };
 

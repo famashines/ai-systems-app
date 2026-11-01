@@ -15,6 +15,7 @@ import TaskScreen from '@/app/task/[id]';
 import { router } from 'expo-router';
 import { redirectSystemPath } from '@/app/+native-intent';
 import { LockScreen } from '@/components/lock-screen';
+import { shortName } from '@/components/model-picker';
 import { Button, StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
@@ -858,6 +859,39 @@ describe('Live', () => {
       expect(screen.getByPlaceholderText('Message Fama AI...')).toBeOnTheScreen();
     });
 
+    it.each([
+      ['Anthropic: Claude Fable 5.1', 'Fable 5.1'],
+      ['Anthropic: Claude Opus 5.5', 'Opus 5.5'],
+      ['Anthropic: Claude Sonnet 5.5', 'Sonnet 5.5'],
+      ['Anthropic: Claude Haiku 5.5', 'Haiku 5.5'],
+      ['OpenAI: GPT-5', 'GPT-5'],
+      ['OpenAI: GPT-4.1 Nano', 'GPT-4.1 Nano'],
+      ['GPT-5', 'GPT-5'],
+    ])('shows %s as %s on the chip', (name, short) => {
+      expect(shortName(name)).toBe(short);
+    });
+
+    it('shows the short name on the chip and the full name in its label', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'anthropic/claude-opus-5.5', effort: 'max' });
+      server.on(modelsRoute, json(200, { items: [{ id: 'anthropic/claude-opus-5.5', name: 'Anthropic: Claude Opus 5.5', efforts: ['max', 'high'], defaultEffort: 'high' }] }));
+      await show(<Chat />);
+      await connect();
+      expect(await screen.findByRole('button', { name: 'Model Anthropic: Claude Opus 5.5, effort Max' })).toHaveTextContent('Opus 5.5Max');
+    });
+
+    it('does not bring back an old saved effort when the saved model left the list', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'gone/old-model', effort: 'high' });
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await fireEvent.press(chip('Model Auto, effort Auto'));
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'High', checked: false })).toBeOnTheScreen();
+      await waitFor(async () => expect((await getItem<{ model: string; effort: null }>('settings'))?.value).toMatchObject({ model: 'openai/gpt-5', effort: null }));
+    });
+
     it('turns the chip off while offline', async () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
@@ -889,21 +923,21 @@ describe('Live', () => {
       expect(screen.getByLabelText('Reasoning effort')).toHaveProp('accessibilityRole', 'radiogroup');
       const efforts = () => screen.getAllByRole('radio').map((row) => row.props.accessibilityLabel).slice(4);
       expect(efforts()).toEqual(['Auto (Medium)', 'High', 'Medium', 'Low', 'Minimal']);
-      expect(screen.getByRole('radio', { name: 'Auto (Medium)', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'High' }));
-      expect(screen.getByRole('radio', { name: 'High', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'High', checked: true })).toBeOnTheScreen();
       await waitFor(async () => expect((await getItem<{ model: string; effort: string }>('settings'))?.value).toMatchObject({ model: 'openai/gpt-5', effort: 'high' }));
       await fireEvent.press(screen.getByRole('radio', { name: 'DeepSeek: DeepSeek V4' }));
       expect(efforts()).toEqual(['Auto (High)', 'Max', 'Extra high', 'High', 'Medium', 'Low', 'Off']);
-      expect(screen.getByRole('radio', { name: 'High', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'High', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'Off' }));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
-      expect(screen.getByRole('radio', { name: 'Auto (Medium)', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'Minimal' }));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-4.1 Nano' }));
       expect(screen.queryByLabelText('Reasoning effort')).toBeNull();
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
-      expect(screen.getByRole('radio', { name: 'Auto (Medium)', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'Low' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
       expect(screen.queryByTestId('model-panel')).toBeNull();
@@ -1043,7 +1077,7 @@ describe('Live', () => {
       await waitFor(() => expect(modelCalls()).toHaveLength(1));
       await fireEvent.press(chip('ماڈل خود کار، سوچ کی سطح خود کار'));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
-      expect(screen.getByRole('radio', { name: 'خود کار (درمیانی)', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'خود کار (درمیانی)', checked: true })).toBeOnTheScreen();
       expect(screen.getByLabelText('ماڈل تلاش کریں')).toHaveStyle({ textAlign: 'auto' });
       expect(I18nManager.forceRTL).toHaveBeenCalledWith(true);
     });

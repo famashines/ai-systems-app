@@ -251,16 +251,18 @@ it('sends the taskId of a reply, and never together with newTask', async () => {
 });
 
 it('sends the model and effort of a new message, never with a reply taskId, and never an effort with no model', async () => {
-  server.on(route, accepted(), accepted());
+  server.on(route, accepted(), accepted(), accepted());
   await postMessage(conversationId, 'Plan', true, commandId, () => {}, undefined, { model: 'openai/gpt-5', effort: 'high' });
   await postMessage(conversationId, 'Plan', false, commandId, () => {}, undefined, { model: 'openai/gpt-4.1-nano' });
   expect(server.requests.map((request) => request.body)).toEqual([
     { text: 'Plan', newTask: true, model: 'openai/gpt-5', effort: 'high' },
     { text: 'Plan', newTask: false, model: 'openai/gpt-4.1-nano' },
   ]);
+  await postMessage(conversationId, 'Use English only.', false, commandId, () => {}, ids.taskA, { model: 'openai/gpt-5', effort: 'high' });
+  expect(server.requests[2]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
   await expect(postMessage(conversationId, 'Plan', false, commandId, () => {}, undefined, { effort: 'high' })).rejects.toMatchObject({ kind: 'rejected' });
   await expect(postMessage(conversationId, 'Plan', false, commandId, () => {}, undefined, { model: 'not a model' })).rejects.toMatchObject({ kind: 'rejected' });
-  expect(server.requests).toHaveLength(2);
+  expect(server.requests).toHaveLength(3);
 });
 
 describe('model list', () => {
