@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added (tasks, plans and owner controls, M3-08)
+
+- The task screen (`/task/<taskId>`, from the task list and the chat):
+  status, mode, cost, the plan as a DAG in steps, the subtask states,
+  checkpoints, the live text of the running subtask and of the current
+  orchestrator call, the subtask outputs, the timeline and the result.
+- Plan preview in the chat with Approve plan, Edit plan and Reject plan.
+  The plan editor changes the title, instructions, agent, dependencies,
+  order and approval rule of each subtask, and adds or removes subtasks.
+- Owner controls: pause, resume, cancel run, cancel task, retry subtask,
+  change agent, auto-run switch, and approve or refuse a checkpoint. Each
+  action has its own `Idempotency-Key`, and 409, 400 and 503 have their
+  own texts.
+- Reply to a task in the chat: the next message has the `taskId` of that
+  task.
+- Contracts v0.4.1.
+- Push deferred (owner decision).
+
 ### Changed (app name Fama AI)
 
 - The app name is `Fama AI` (launcher label, in-app text, lock screen
