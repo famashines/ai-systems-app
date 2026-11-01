@@ -37,7 +37,8 @@ it and starts Metro.
 ## Configuration
 
 `.env.example` lists the variables with no values. An empty or missing
-variable uses the default.
+variable uses the default. The `GOOGLE_*` variables are only for the
+release scripts (docs/release.md, section 4).
 
 | Variable | Default | Use |
 | -------- | ------- | --- |
@@ -381,16 +382,18 @@ audience `ai-systems-app` and the role `owner`.
 - Invalid WebSocket frames are only counted in memory
   (`LiveClient.invalidFrames`); there is no telemetry yet.
 
+## Release
+
+`npm run aab` builds `ai-systems-<version>.aab` with a local EAS build.
+`npm run release:android` builds and uploads it to the Google Play
+internal testing track. The first release, the Play Console forms and the
+service account are in [docs/release.md](docs/release.md). The privacy
+policy is [PRIVACY.md](PRIVACY.md).
+
 ## What the owner must do later
 
-The app has no EAS project yet, so `app.json` has no `extra.eas` and no
-`updates.url`. Before the first EAS build or EAS Update:
-
-1. Create the Expo project `ai-systems` (`npx eas-cli init`). This adds
-   `extra.eas.projectId` and `owner` to `app.json`.
-2. Add `EXPO_TOKEN` as a secret of this repo for the build workflow.
-3. Create the Play Console app `com.famashines.ai` with a service account
-   (ADR 0012).
+Do the first Google Play release by hand: [docs/release.md](docs/release.md),
+sections 2 to 4.
 
 The Keycloak realm `ai-systems` and the client `ai-systems-app` with the
 redirect URI `com.famashines.ai:/oauth2redirect` must exist before a real
