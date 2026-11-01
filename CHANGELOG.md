@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added (first Google Play release)
+
+- The app name is `ai.famashines`, version 1.0.0.
+- The EAS project `@m-yahya/ai-systems`.
+- The app icon, the adaptive icon (with a monochrome layer), the splash
+  icon for light and dark, and the 512 px Play icon.
+- `npm run aab`, `npm run submit:play` (internal track, with an optional
+  draft status) and `npm run release:android`, and
+  `scripts/bump-version.js`, which also writes the version to `app.json`.
+- PRIVACY.md and docs/release.md.
+
 ### Added (M2-08)
 
 - Contracts v0.3.0. The task status `blocked` has a label.
