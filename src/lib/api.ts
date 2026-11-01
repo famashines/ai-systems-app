@@ -1,4 +1,15 @@
-import { Id, ProblemJson, SubmitTaskCommandPayloadV1, TaskListResultV1, WsLimits, type Timestamp } from '@famashines/ai-systems-contracts';
+import {
+  BudgetMonthV1,
+  ConversationThreadResultV1,
+  Id,
+  MessageIntent,
+  PostOwnerMessageCommandPayloadV1,
+  ProblemJson,
+  SetBudgetCommandPayloadV1,
+  TaskListResultV1,
+  WsLimits,
+  type Timestamp,
+} from '@famashines/ai-systems-contracts';
 import { z } from 'zod';
 
 import * as auth from '@/lib/auth';
@@ -16,13 +27,19 @@ export class ApiError extends Error {
     readonly kind: ApiErrorKind,
     readonly retryAfterMs = 0,
     readonly problem?: ProblemJson,
+    readonly status = 0,
   ) {
     super(problem?.title ?? kind);
   }
 }
 
-const SubmitTaskResult = z.object({ taskId: Id, version: z.int().nonnegative() });
-type Submitted = z.infer<typeof SubmitTaskResult>;
+const PostedAnswer = z.object({ conversationId: Id, messageId: Id, intent: MessageIntent, taskId: Id.exactOptional() });
+export type Posted = z.infer<typeof PostedAnswer>;
+
+const BudgetVersion = z.object({ version: z.int().min(1) });
+
+export type Page = { before?: Timestamp; beforeId?: Id };
+type Wait = (kind: 'rateLimited' | 'unavailable') => void;
 
 function retryAfter(header: string | null): number {
   const seconds = Number(header);
@@ -70,21 +87,11 @@ async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>)
   if (response.status === 429) throw new ApiError('rateLimited', retryAfter(response.headers.get('Retry-After')));
   if (response.status === 502 || response.status === 503) throw new ApiError('unavailable');
   const problem = ProblemJson.safeParse(await response.json().catch(() => null));
-  throw new ApiError('rejected', 0, problem.success ? problem.data : undefined);
+  throw new ApiError('rejected', 0, problem.success ? problem.data : undefined, response.status);
 }
 
-export async function submitTaskOnce(text: string, key: string): Promise<Submitted> {
-  const payload = SubmitTaskCommandPayloadV1.safeParse({ text });
-  if (!payload.success) throw new ApiError('rejected');
-  return request(
-    '/api/tasks',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
-      body: JSON.stringify(payload.data),
-    },
-    SubmitTaskResult,
-  );
+function post<T>(path: string, body: unknown, key: string, schema: z.ZodType<T>): Promise<T> {
+  return request(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) }, schema);
 }
 
 export function backoffMs(attempt: number, random = Math.random()): number {
@@ -94,10 +101,10 @@ export function backoffMs(attempt: number, random = Math.random()): number {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export async function submitTask(text: string, key: string, onWait: (kind: 'rateLimited' | 'unavailable') => void = () => {}): Promise<Submitted> {
+async function withRetry<T>(once: () => Promise<T>, onWait: Wait): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await submitTaskOnce(text, key);
+      return await once();
     } catch (error) {
       const last = attempt + 1 >= sendAttempts;
       if (!(error instanceof ApiError) || last || (error.kind !== 'rateLimited' && error.kind !== 'unavailable')) throw error;
@@ -107,9 +114,38 @@ export async function submitTask(text: string, key: string, onWait: (kind: 'rate
   }
 }
 
-export function listTasks(page: { before?: Timestamp; beforeId?: Id } = {}): Promise<TaskListResultV1> {
+export async function postMessage(conversationId: string, text: string, newTask: boolean, key: string, onWait: Wait = () => {}): Promise<Posted> {
+  const payload = PostOwnerMessageCommandPayloadV1.safeParse({ conversationId, text, newTask });
+  if (!payload.success) throw new ApiError('rejected');
+  return withRetry(() => post(`/api/conversations/${payload.data.conversationId}/messages`, { text: payload.data.text, newTask: payload.data.newTask }, key, PostedAnswer), onWait);
+}
+
+function pageQuery(page: Page): URLSearchParams {
   const query = new URLSearchParams({ limit: String(pageSize) });
   if (page.before) query.set('before', page.before);
   if (page.beforeId) query.set('beforeId', page.beforeId);
-  return request(`/api/tasks?${query}`, { method: 'GET' }, TaskListResultV1);
+  return query;
+}
+
+export function listTasks(page: Page = {}): Promise<TaskListResultV1> {
+  return request(`/api/tasks?${pageQuery(page)}`, { method: 'GET' }, TaskListResultV1);
+}
+
+export function getThread(conversationId: string, page: Page = {}): Promise<ConversationThreadResultV1> {
+  return request(`/api/conversations/${Id.parse(conversationId)}/messages?${pageQuery(page)}`, { method: 'GET' }, ConversationThreadResultV1);
+}
+
+export async function getBudget(): Promise<BudgetMonthV1 | null> {
+  try {
+    return await request('/api/budget', { method: 'GET' }, BudgetMonthV1);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function setBudget(hardCapMicroUsd: number, softCapMicroUsd: number | undefined, key: string): Promise<number> {
+  const payload = SetBudgetCommandPayloadV1.safeParse({ scope: { kind: 'month' }, hardCapMicroUsd, ...(softCapMicroUsd === undefined ? {} : { softCapMicroUsd }) });
+  if (!payload.success) throw new ApiError('rejected');
+  return (await withRetry(() => post('/api/budget', payload.data, key, BudgetVersion), () => {})).version;
 }

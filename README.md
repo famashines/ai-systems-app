@@ -9,11 +9,12 @@ src/
 ├── app/              routes only
 │   ├── _layout.tsx   providers, login guard, lock overlay
 │   ├── login.tsx
-│   └── (tabs)/       chat (index), tasks, settings
+│   └── (tabs)/       chat (index), tasks, budget, settings
 ├── components/       ui.tsx (Screen, AppText, Button, StateView), lock-screen.tsx, live-bar.tsx
 ├── i18n/             en.json, de.json, ur.json, t()
-├── lib/              auth, lock, cache, config, api (HTTP), live (WebSocket client)
-├── state/            settings (language, theme), session (login, lock), live (tasks, chat)
+├── lib/              auth, lock, cache, config, api (HTTP), live (WebSocket client),
+│                     chat (thread, deltas, topics), money (micro-USD to text)
+├── state/            settings (language, theme), session (login, lock), live (tasks, chat, budget)
 └── theme.ts          colour, spacing, type and radius tokens
 ```
 
@@ -107,12 +108,13 @@ reason in this section.
   the device language locks as a normal cold start.
 - Theme: follows the device, with an override in Settings.
 - Live connection: one WebSocket for each signed-in session (also while
-  locked). See "Live tasks" below.
+  locked). See "Live tasks", "Chat" and "Budget" below.
 
 ## Live tasks
 
-The app uses the contracts v0.2.1 schemas for each API answer
-(`TaskListResultV1`, `ProblemJson`) and each WebSocket frame
+The app uses the contracts v0.3.0 schemas for each API answer
+(`TaskListResultV1`, `ConversationThreadResultV1`, `BudgetMonthV1`,
+`ProblemJson`) and each WebSocket frame
 (`ClientMessageV1`, `ServerMessageV1`). A frame that does not parse (for
 example a message type from a later contracts version) does not close the
 socket: the app ignores it and counts it. If that frame has the type
@@ -123,10 +125,12 @@ app                                  socket-gateway        api-gateway
  | new WebSocket(wsUrl), no token in the URL |                    |
  | hello { v: 1, token, lastSeq? } --------> |                    |
  | <------------- welcome { heartbeatMs }    |                    |
- | subscribe { topics: ["tasks"] } --------> |                    |
+ | subscribe { topics: ["tasks", "budget", "conversation:<id>"] } |
  | <------------- subscribed { fromSeq }     |                    |
- | GET /api/tasks?limit=50 (only when a snapshot is necessary) -> |
+ | GET /api/tasks, thread and budget (when a snapshot is necessary) ->
  | <------------- notice { seq, docId, rev, data, commandId? }    |
+ | subscribe / unsubscribe { topics: ["task:<taskId>"] } -------> |
+ | <------------- delta { taskId, callId, attempt, i, text }      |
 ```
 
 First load and reconnect:
@@ -136,7 +140,14 @@ First load and reconnect:
   `lastSeq`.
 - The app reads the snapshot after `subscribed`, never before. It reads
   it when it has no `lastSeq`, after `resync` (before or after
-  `subscribed`), and when `fromSeq` is higher than `lastSeq + 1`.
+  `subscribed`; the only reason is `too_old`), and when `fromSeq` is
+  higher than `lastSeq + 1`. The snapshot is the task list, the first page
+  of the thread and the budget month. The thread and the budget are not
+  cached, so the app also reads them at the first `subscribed` of each
+  session.
+- Only the `subscribed` answer to the first `subscribe` of a socket starts
+  the session. A `subscribed` for a later `task:<id>` topic loads nothing:
+  the task topics have no read model yet (M3).
 - A notice with `seq <= lastSeq` is dropped. A notice with a `rev` that
   is not higher than the stored task is dropped, but its `seq` still
   moves `lastSeq`. A snapshot item replaces a stored task when its `rev`
@@ -168,17 +179,66 @@ random factor from 0.5 to 1, at least 1 s. Only a stable session resets
 it: 10 s after `subscribed`, or the first `notice` or `pong` after
 `subscribed`. `welcome` alone does not reset it.
 
-Chat (M1, no conversation topic yet): the app keeps the sent messages in
-memory.
+## Chat
+
+```
+app                                api-gateway / socket-gateway
+ | POST /api/conversations/<id>/messages { text, newTask }, Idempotency-Key
+ | <-- 202 { messageId, intent, taskId? }
+ | <-- notice conversation:<id> owner message { commandId }      "Received"
+ | <-- notice conversation:<id> owner message rev 2 { taskId }
+ | subscribe task:<taskId> -->
+ | <-- delta { attempt, i, text } ...                            live text
+ | <-- notice conversation:<id> agent message { text, costMicroUsd? }
+ | unsubscribe task:<taskId> --> <-- unsubscribed
+```
+
+- One conversation for each device (M2). The app makes a lower-case UUID
+  v4 at the first start and keeps it in the sqlite cache
+  (`chat.conversationId`). Sign-out keeps it, so the thread is there
+  again after the next sign-in; the id has no data, and each read needs
+  the token.
+- New task: the switch "New task" next to the input. When it is on, the
+  next message has `newTask: true`, and the switch goes off after the
+  send. When it is off, the message has `newTask: false`, and
+  conversation-hub decides: a running task of the thread gets the
+  message (steer), else it starts a new task. The app never sends a
+  `taskId`.
+- Thread: `GET /api/conversations/<id>/messages?limit=50`, newest first,
+  shown in an inverted list (newest at the bottom). Older pages use
+  `before` = `createdAt` and `beforeId` = `messageId` of the last item of
+  the last page. A page is limited by bytes, so it can have fewer items
+  than `limit`: only an empty page is the end. Notices of
+  `conversation:<id>` merge by `docId` and `rev`, the same as tasks.
+- Task topics: the app subscribes `task:<taskId>` for each task of the
+  thread whose newest message is an owner message (it waits for a
+  reply), and for each task whose status in the task list is not
+  `blocked`, `completed`, `failed`, `cancelled` or `rejected`. So a
+  refusal reply to a second message does not stop the live text of a
+  running task. At most 50 topics in total, the newest tasks first.
+- Deltas: the state is kept by `(taskId, callId)`. The text is the parts
+  in index order; a lost delta is a gap. When `attempt` grows, the app
+  drops the text of the earlier attempt and starts again at `i = 0`. A
+  delta of an older attempt is dropped. When the agent reply of the task
+  comes, it replaces the live text. A later delta of the same task shows
+  the live text again. The app takes deltas only for the task topics that
+  it has now, and after `unsubscribed` it removes the live text of those
+  tasks.
+- The live text has no TalkBack live region (each delta would be read);
+  the agent reply has a polite live region.
+- Cost: an agent reply shows `costMicroUsd` (integer micro-USD, all LLM
+  attempts of its task) in USD with the number format of the language:
+  4 decimals under 0.01 USD, else 2. Under 0.0001 USD the text is
+  "under $0.0001". The app never stores the amount as a float.
 
 | Status | When |
 | ------ | ---- |
 | Sending | at once after Send; the app makes a lower-case UUID v4 (`expo-crypto`) as `Idempotency-Key` |
-| Received | the notice with the same `commandId` came, or the task is in the list |
+| Received | the message is in the thread: the notice with the same `commandId`, or a snapshot with its `messageId` |
 | Still processing | 10 s after Send with no notice |
 | Service not available. Trying again. | 502 or 503: up to 4 attempts with backoff; 429: the same, but it waits `Retry-After` |
 | Not sent, with Send again | a network error, or the last attempt failed; Send again uses the same key |
-| The server did not accept this message. | another problem answer (400, 409, 413, 422), or a text that does not fit `SubmitTaskCommandPayloadV1`; no retry. The input takes at most 20000 characters. |
+| The server did not accept this message. | another problem answer (400, 409, 413, 422), or a text that does not fit `PostOwnerMessageCommandPayloadV1`; no retry. The input takes at most 20000 characters. |
 
 A 401 answer refreshes the token and sends the request one more time.
 TalkBack reads each status change of a message (polite live region).
@@ -186,20 +246,47 @@ TalkBack reads each status change of a message (polite live region).
 Offline: the app keeps the task list (the newest 200 tasks) and `lastSeq`
 in the sqlite cache (key `live.tasks`), only after a snapshot. While the socket is not
 connected, the Tasks screen shows "Offline, last update hh:mm" and the
-chat input and Send are off. Sign-out (also from the lock screen, or when
+chat input, the New task switch and Send are off, and the Budget form
+cannot save. Sign-out (also from the lock screen, or when
 the session ends) removes `live.tasks` and keeps the settings.
 
-### Maestro
+## Budget
+
+- The Budget tab reads `GET /api/budget` (the current month in the owner
+  time zone) at the first `subscribed` and with each snapshot. A 404
+  means that no cap is set: the screen says that the agents cannot call a
+  model until a cap is set.
+- It shows the month, the monthly cap, the soft cap, spent, reserved and
+  remaining, and "Over the cap" when `overCapMicroUsd` is above 0.
+- A `budget` notice for the shown month with a higher `rev` replaces the
+  view. A notice for a later month, or any notice while no month is shown,
+  reads the month again. Notices for older months (a cap change notifies
+  every month) are dropped.
+- Set the cap: the monthly cap and an optional soft cap in USD, with a dot
+  or a comma as the decimal sign. The app reads the text to integer
+  micro-USD with no float. It checks the amount (0 to 1,000,000 USD, at
+  most 6 decimals) and that the soft cap is not above the cap before it
+  sends `POST /api/budget` with `{ scope: { kind: "month" },
+  hardCapMicroUsd, softCapMicroUsd? }` and an `Idempotency-Key`. A retry
+  after a network error uses the same key; a change of the amounts makes
+  a new key. After 202 the app reads the month again. A problem answer
+  (400, 403, 409) shows "The server did not accept this cap."
+
+## Maestro
 
 Status: the flow is written, but it was never run, and it does not fit
 the local system of M1-05 yet. Maestro is not part of the toolchain now
 (owner decision).
 
-`.maestro/live-tasks.yaml` signs in, sends a task in the chat, sees it in
-the list, sets airplane mode, sends a second task through the API from the
-host while the phone is offline (two times with the same
-`Idempotency-Key`), turns airplane mode off, and checks that each task
-shows once.
+`.maestro/live-tasks.yaml` signs in, sends a message in the chat (it
+starts a task), sees the task in the list, sets airplane mode, sends a
+second task through the API from the host while the phone is offline (two
+times with the same `Idempotency-Key`), turns airplane mode off, and
+checks that each task shows once.
+
+`.maestro/budget-cap.yaml` signs in, opens the Budget tab, sets a monthly
+cap of 0.05 USD with a soft cap of 0.04 USD, and waits until the view
+shows the cap.
 
 What is missing before it can run against the local system:
 
@@ -231,7 +318,7 @@ EXPO_PUBLIC_OIDC_ISSUER=<issuer URL that the emulator and the containers both re
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 \
 EXPO_PUBLIC_WS_URL=ws://10.0.2.2:8081/ws npm run android
 adb shell pm clear com.android.chrome
-maestro test .maestro/live-tasks.yaml \
+maestro test .maestro/live-tasks.yaml .maestro/budget-cap.yaml \
   -e API_URL=http://localhost:8080 \
   -e ISSUER=<the same issuer URL, as the host reaches it> \
   -e TOKEN_CLIENT_ID=<client with the password grant> \
@@ -246,9 +333,18 @@ audience `ai-systems-app` and the role `owner`.
 
 - The Android recents screen can show a thumbnail of the last screen. The
   app does not set `FLAG_SECURE`. Reconsider in M9 hardening.
-- Chat messages are in memory only. After a restart the chat is empty;
-  the tasks are in the Tasks list. The `conversation:<id>` topic comes in
-  M2.
+- The thread and the budget are not in the offline cache. After a cold
+  start with no connection the chat and the Budget tab are empty; the
+  tasks are in the Tasks list.
+- One conversation for each device. There is no list of threads and no
+  way to start a second thread (M2 scope).
+- The app does not send a `taskId`, so it cannot steer a `blocked` task
+  (conversation-hub steers a blocked task only with its `taskId`).
+- A task that is older than the loaded task list and whose newest thread
+  message is an owner message stays subscribed (at most 47 task topics).
+- The task list still pages with `items.length === limit`. The task list
+  of projections is not limited by bytes, so this is correct for it, but
+  it is not the rule of the thread.
 - A refresh with the same refresh token joins the request that waits,
   so the server normally sees each refresh token one time. React Native
   fetch has no read timeout and `expo-auth-session` takes no

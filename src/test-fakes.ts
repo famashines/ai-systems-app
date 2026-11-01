@@ -1,4 +1,4 @@
-import type { ClientMessageV1, ServerMessageV1 } from '@famashines/ai-systems-contracts';
+import type { ClientMessageV1, ServerMessageV1, TaskStatus } from '@famashines/ai-systems-contracts';
 
 export class FakeSocket {
   static readonly CONNECTING = 0;
@@ -93,6 +93,6 @@ export const ids = {
   taskC: 'c3333333-3333-4333-8333-333333333333',
 };
 
-export function task(taskId: string, rev: number, title = `Task ${taskId.slice(0, 1)}`, createdAt = '2026-10-31T10:00:00.000Z') {
-  return { taskId, title, status: 'submitted' as const, createdAt, updatedAt: createdAt, rev, asOf: rev };
+export function task(taskId: string, rev: number, title = `Task ${taskId.slice(0, 1)}`, createdAt = '2026-10-31T10:00:00.000Z', status: TaskStatus = 'submitted') {
+  return { taskId, title, status, createdAt, updatedAt: createdAt, rev, asOf: rev };
 }

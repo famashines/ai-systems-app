@@ -1,0 +1,52 @@
+appId: com.famashines.ai
+name: "Set the monthly cap on the Budget tab. NOT RUN: no Maestro CLI (owner decision), see README Maestro"
+env:
+  USERNAME: owner
+  PASSWORD: owner
+---
+- launchApp:
+    clearState: true
+    stopApp: true
+- tapOn: "Sign in"
+- tapOn:
+    text: "Use without an account"
+    optional: true
+- tapOn:
+    text: "No thanks"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "username"
+    timeout: 30000
+- tapOn:
+    id: "username"
+- inputText: ${USERNAME}
+- tapOn:
+    id: "password"
+- inputText: ${PASSWORD}
+- tapOn:
+    id: "kc-login"
+- extendedWaitUntil:
+    visible:
+      id: "chat-input"
+    timeout: 30000
+- tapOn: "Budget"
+- extendedWaitUntil:
+    visible:
+      id: "budget-hard"
+    timeout: 30000
+- tapOn:
+    id: "budget-hard"
+- eraseText
+- inputText: "0.05"
+- tapOn:
+    id: "budget-soft"
+- eraseText
+- inputText: "0.04"
+- tapOn: "Save cap"
+- extendedWaitUntil:
+    visible: "The cap is saved. The view updates in a moment."
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "Monthly cap: \\$0\\.05"
+    timeout: 30000
