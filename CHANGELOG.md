@@ -18,6 +18,19 @@
 - The live client changes its topics while it runs (`subscribe` and
   `unsubscribe`) and handles `unsubscribed`.
 
+### Fixed (M2-08 review)
+
+- A topic change sends `unsubscribe` before `subscribe`. A refused
+  `subscribe` (`validation_failed`) is forgotten and sent again later.
+- A reply while the task runs (a refusal) no longer hides the live text;
+  only the reply of a `completed` or `failed` task does.
+- A first-page reload with no common message starts the paging again.
+- A quick sign-out and sign-in no longer leaves the budget on "Loading".
+- The cap input refuses a separator with exactly three digits and shows
+  the read amount before Save.
+- The hint of "New task" says that a message to a running task is
+  refused in this version.
+
 ### Changed (M2-08)
 
 - The chat posts to the conversation route, not to `POST /api/tasks`.

@@ -534,6 +534,39 @@ describe('Live', () => {
       expect((await getItem(conversationKey))?.value).toBe(conversationId);
     });
 
+    it('clears the thread, live text, sent messages and budget on sign-out, and keeps the conversation id for the next sign-in', async () => {
+      server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 1, 'Old task')], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [owner(ids.taskB, 'Old thread', 2, ids.taskA)], headSeq: 10 }));
+      server.on('GET /api/budget', json(200, { month: '2026-11', capMicroUsd: 5_000_000, spentMicroUsd: 0, reservedMicroUsd: 0, remainingMicroUsd: 5_000_000, overCapMicroUsd: 0, rev: 1, asOf: 1 }));
+      server.on(postRoute, new TypeError('Network request failed'));
+      jest.mocked(auth.signIn).mockResolvedValue(true);
+      await show(
+        <>
+          <Chat />
+          <Budget />
+          <Settings />
+          <Login />
+        </>,
+      );
+      const socket = await connect();
+      await screen.findByText('Old thread');
+      await screen.findByText('Month 2026-11');
+      await delta(socket, 1, 0, 'Old stream');
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Pending text');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await screen.findByText('Not sent');
+      expect(screen.getByText('Old stream')).toBeOnTheScreen();
+      await waitFor(async () => expect(await getItem(tasksCacheKey)).not.toBeNull());
+      await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
+      await waitFor(async () => expect(await getItem(tasksCacheKey)).toBeNull());
+      await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+      await socketNumber(2);
+      for (const text of ['Old thread', 'Old stream', 'Pending text', 'Month 2026-11']) expect(screen.queryByText(text)).toBeNull();
+      expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Loading the budget')).toBeOnTheScreen();
+      expect((await getItem(conversationKey))?.value).toBe(conversationId);
+    });
+
     it('makes and keeps a conversation id when the device has none', async () => {
       await removeItem(conversationKey);
       await show(<Chat />);
@@ -617,10 +650,13 @@ describe('Live', () => {
       expect(screen.queryByText(/Roses/)).toBeNull();
       await delta(socket, 1, 2, ' late');
       expect(screen.getByText('Violets')).toBeOnTheScreen();
-      await said(socket, 12, agent(ids.taskC, ids.taskA, 'Violets are blue'));
-      expect(screen.queryByTestId(`stream-${ids.taskA}`)).toBeNull();
+      await receive(socket, 12, task(ids.taskA, 2, 'Write a poem', undefined, 'running'));
+      await said(socket, 13, agent(ids.taskC, ids.taskA, 'Violets are blue'));
       expect(screen.getByText('Violets are blue')).toBeOnTheScreen();
-      await said(socket, 13, agent(ids.taskC, ids.taskA, 'Violets are blue', 1_234, 2));
+      expect(screen.getByTestId(`stream-${ids.taskA}`)).toBeOnTheScreen();
+      await receive(socket, 14, task(ids.taskA, 3, 'Write a poem', undefined, 'completed'));
+      expect(screen.queryByTestId(`stream-${ids.taskA}`)).toBeNull();
+      await said(socket, 15, agent(ids.taskC, ids.taskA, 'Violets are blue', 1_234, 2));
       expect(screen.getByText('Cost $0.0012')).toBeOnTheScreen();
       expect(screen.getByLabelText('Agent: Violets are blue. Cost $0.0012')).toHaveProp('accessibilityLiveRegion', 'polite');
       expect(socket.sent.at(-1)).toEqual({ type: 'unsubscribe', topics: [`task:${ids.taskA}`] });
@@ -639,7 +675,10 @@ describe('Live', () => {
       await waitFor(() => expect(socket.sent.at(-1)).toEqual({ type: 'subscribe', topics: [`task:${ids.taskA}`] }));
       await delta(socket, 1, 0, 'Still going');
       expect(screen.getByText('Still going')).toBeOnTheScreen();
-      await receive(socket, 12, task(ids.taskA, 3, 'Plan', undefined, 'completed'));
+      await said(socket, 12, agent('e5555555-5555-4555-8555-555555555555', ids.taskA, 'The task is running. Wait for it, again.'));
+      expect(screen.getByText('Still going')).toBeOnTheScreen();
+      await receive(socket, 13, task(ids.taskA, 3, 'Plan', undefined, 'completed'));
+      expect(screen.queryByText('Still going')).toBeNull();
       expect(socket.sent.at(-1)).toEqual({ type: 'unsubscribe', topics: [`task:${ids.taskA}`] });
     });
 
@@ -878,6 +917,45 @@ describe('Live', () => {
       expect(await screen.findByText('Offline. You can change the cap when the connection is back.')).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
       await socketNumber(2);
+    });
+
+    it('reads the budget in a new session after a sign-out while the old read still waits', async () => {
+      server.on('GET /api/budget', () => new Promise<Response>(() => {}), json(200, month()));
+      jest.mocked(auth.signIn).mockResolvedValue(true);
+      await show(
+        <>
+          <Budget />
+          <Settings />
+          <Login />
+        </>,
+      );
+      await connect();
+      await waitFor(() => expect(budgetCalls()).toHaveLength(1));
+      await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
+      await fireEvent.press(await screen.findByRole('button', { name: 'Sign in' }));
+      await connect(2);
+      expect(await screen.findByText('Month 2026-11')).toBeOnTheScreen();
+      expect(budgetCalls()).toHaveLength(2);
+    });
+
+    it('shows the read amount before Save and refuses a separator with exactly three digits', async () => {
+      server.on('GET /api/budget', notFound());
+      await show(<Budget />);
+      await connect();
+      await screen.findByText(/^No cap is set/);
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '1,5');
+      expect(screen.getByTestId('budget-hard-read')).toHaveTextContent('Amount: $1.50');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '0.000001');
+      expect(screen.getByTestId('budget-hard-read')).toHaveTextContent('Amount: $0.000001');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '1,000');
+      expect(screen.queryByTestId('budget-hard-read')).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText('A dot or comma with exactly three digits after it is not clear. Write 1000 for one thousand USD, or 1.00 for one USD.')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Soft cap in USD, optional'), '1.000');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '2');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText(/^A dot or comma with exactly three digits/)).toBeOnTheScreen();
+      expect(posts()).toHaveLength(0);
     });
 
     it('is in Urdu, right to left, with the offline note', async () => {

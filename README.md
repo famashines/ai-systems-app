@@ -148,6 +148,12 @@ First load and reconnect:
 - Only the `subscribed` answer to the first `subscribe` of a socket starts
   the session. A `subscribed` for a later `task:<id>` topic loads nothing:
   the task topics have no read model yet (M3).
+- A topic change sends `unsubscribe` before `subscribe`, so the server
+  frees the slots first and a new task topic fits at 50 topics. When the
+  server refuses a `subscribe` (`error` `validation_failed`, too many
+  topics), the app counts it (`LiveClient.refusedSubscribes`) and forgets
+  those topics, so it sends them again at the next topic change and after
+  a reconnect.
 - A notice with `seq <= lastSeq` is dropped. A notice with a `rev` that
   is not higher than the stored task is dropped, but its `seq` still
   moves `lastSeq`. A snapshot item replaces a stored task when its `rev`
@@ -202,13 +208,18 @@ app                                api-gateway / socket-gateway
   next message has `newTask: true`, and the switch goes off after the
   send. When it is off, the message has `newTask: false`, and
   conversation-hub decides: a running task of the thread gets the
-  message (steer), else it starts a new task. The app never sends a
-  `taskId`.
+  message (steer), else it starts a new task. In this version
+  orchestration refuses a message to a running task (the refusal comes as
+  a reply), and the TalkBack hint of the switch says so. The app never
+  sends a `taskId`.
 - Thread: `GET /api/conversations/<id>/messages?limit=50`, newest first,
   shown in an inverted list (newest at the bottom). Older pages use
   `before` = `createdAt` and `beforeId` = `messageId` of the last item of
   the last page. A page is limited by bytes, so it can have fewer items
-  than `limit`: only an empty page is the end. Notices of
+  than `limit`: only an empty page is the end. When a reload of the first
+  page (after a snapshot) shares no `messageId` with the stored items, the
+  app drops the stored items and starts the paging again from that page.
+  Notices of
   `conversation:<id>` merge by `docId` and `rev`, the same as tasks.
 - Task topics: the app subscribes `task:<taskId>` for each task of the
   thread whose newest message is an owner message (it waits for a
@@ -220,9 +231,11 @@ app                                api-gateway / socket-gateway
   in index order (an object by index, so a large `i` costs no memory); a
   lost delta is a gap. When `attempt` grows, the app
   drops the text of the earlier attempt and starts again at `i = 0`. A
-  delta of an older attempt is dropped. When the agent reply of the task
-  comes, it replaces the live text. A later delta of the same task shows
-  the live text again. The app takes deltas only for the task topics that
+  delta of an older attempt is dropped. The live text goes away when an
+  agent reply of the task came after the last delta and the task status
+  in the task list is `completed` or `failed`: then that reply is the
+  final run reply. A reply while the task still runs (for example the
+  refusal of a second message) does not hide the live text. The app takes deltas only for the task topics that
   it has now, and after `unsubscribed` it removes the live text of those
   tasks.
 - The live text has no TalkBack live region (each delta would be read);
@@ -265,7 +278,10 @@ the session ends) removes `live.tasks` and keeps the settings.
   every month) are dropped.
 - Set the cap: the monthly cap and an optional soft cap in USD, with a dot
   or a comma as the decimal sign. The app reads the text to integer
-  micro-USD with no float. It checks the amount (0 to 1,000,000 USD, at
+  micro-USD with no float, and shows the read amount under each field
+  before Save ("Amount: $1.50"). A dot or a comma with exactly three
+  digits after it ("1,000", "1.000") is refused with its own text,
+  because it can be a thousands separator. It checks the amount (0 to 1,000,000 USD, at
   most 6 decimals) and that the soft cap is not above the cap before it
   sends `POST /api/budget` with `{ scope: { kind: "month" },
   hardCapMicroUsd, softCapMicroUsd? }` and an `Idempotency-Key`. A retry
