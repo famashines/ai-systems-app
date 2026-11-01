@@ -858,7 +858,7 @@ describe('Live', () => {
       expect(screen.getByPlaceholderText('Message Fama AI...')).toBeOnTheScreen();
     });
 
-    it('turns the chip off while offline and while it replies to a task', async () => {
+    it('turns the chip off while offline', async () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
       expect(chip('Model Auto, effort Auto')).toBeDisabled();
@@ -1348,6 +1348,7 @@ describe('Live', () => {
       await fireEvent.press((await screen.findAllByRole('button', { name: 'Reply to this task' }))[0]!);
       expect(screen.getByText('Your next message goes to the task: Plan the week')).toBeOnTheScreen();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Model Auto, effort Auto' })).toBeDisabled();
       await fireEvent.press(screen.getByRole('button', { name: 'Cancel reply' }));
       expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
       await fireEvent.press(screen.getAllByRole('button', { name: 'Reply to this task' })[0]!);
@@ -1357,6 +1358,7 @@ describe('Live', () => {
       expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
       expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Model Auto, effort Auto' })).toBeEnabled();
     });
 
     it('shows Reply only for a clarifying, running or paused task, from the task list status before a stale detail', async () => {
