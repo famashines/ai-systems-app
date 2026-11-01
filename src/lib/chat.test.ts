@@ -43,7 +43,8 @@ describe('deltas', () => {
     streams = applyDelta(streams, delta(0, 'Hello'));
     streams = applyDelta(streams, delta(1, ' world'));
     streams = applyDelta(streams, delta(3, '!'));
-    expect(streamText(streams[ids.taskA]!)).toBe('Hello world!');
+    streams = applyDelta(streams, delta(1_000_000_000, '?'));
+    expect(streamText(streams[ids.taskA]!)).toBe('Hello world!?');
   });
 
   it('drops the earlier text and starts again at i = 0 when the attempt grows, and drops a delta of an older attempt', () => {

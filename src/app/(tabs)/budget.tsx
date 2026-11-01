@@ -133,7 +133,7 @@ function CapForm({ month }: { month: BudgetMonthV1 | null }) {
 
 export default function Budget() {
   const { t } = useSettings();
-  const { budget, reloadBudget } = useLive();
+  const { budget, reloadBudget, online, status, reconnect } = useLive();
   return (
     <Screen title={t('tabs.budget')}>
       <LiveBar />
@@ -146,6 +146,8 @@ export default function Budget() {
           )
         ) : budget.load === 'error' ? (
           <StateView kind="error" title={t('budget.error')} retryLabel={t('common.retry')} onRetry={reloadBudget} />
+        ) : !online && status === 'reconnecting' ? (
+          <StateView kind="error" title={t('budget.offline')} retryLabel={t('common.retry')} onRetry={reconnect} />
         ) : (
           <StateView kind="loading" title={t('budget.loading')} />
         )}

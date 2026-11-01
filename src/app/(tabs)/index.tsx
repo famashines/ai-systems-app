@@ -104,18 +104,21 @@ function Thread() {
     return <StateView kind="empty" title={t('chat.empty')} />;
   }
   return (
-    <FlatList
-      testID="chat-list"
-      inverted
-      accessibilityLabel={t('chat.messages')}
-      data={rows}
-      keyExtractor={(row) => (row.kind === 'pending' ? `pending-${row.message.key}` : row.kind === 'stream' ? `stream-${row.stream.taskId}` : row.message.messageId)}
-      renderItem={({ item }) => (item.kind === 'pending' ? <Pending message={item.message} /> : item.kind === 'stream' ? <Stream stream={item.stream} /> : <Posted message={item.message} />)}
-      onEndReached={loadOlder}
-      onEndReachedThreshold={0.5}
-      ListFooterComponent={Older}
-      contentContainerStyle={styles.list}
-    />
+    <>
+      {threadLoad === 'error' ? <StateView kind="error" title={t('chat.error')} retryLabel={t('common.retry')} onRetry={reloadThread} /> : null}
+      <FlatList
+        testID="chat-list"
+        inverted
+        accessibilityLabel={t('chat.messages')}
+        data={rows}
+        keyExtractor={(row) => (row.kind === 'pending' ? `pending-${row.message.key}` : row.kind === 'stream' ? `stream-${row.stream.taskId}` : row.message.messageId)}
+        renderItem={({ item }) => (item.kind === 'pending' ? <Pending message={item.message} /> : item.kind === 'stream' ? <Stream stream={item.stream} /> : <Posted message={item.message} />)}
+        onEndReached={loadOlder}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={Older}
+        contentContainerStyle={styles.list}
+      />
+    </>
   );
 }
 

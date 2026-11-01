@@ -6,7 +6,7 @@ import type { Notice } from '@/lib/live';
 export type ChatMessage = ConversationMessageV1;
 export type Messages = Record<string, ChatMessage>;
 export type Delta = { taskId: string; callId: string } & DeltaV1;
-type Call = { attempt: number; parts: string[] };
+type Call = { attempt: number; parts: Record<number, string> };
 export type Stream = { calls: Record<string, Call>; hidden: boolean };
 export type Streams = Record<string, Stream>;
 export type ChatState = { items: Messages; streams: Streams; cursor: Page | null; hasMore: boolean; loaded: boolean };
@@ -31,7 +31,7 @@ export function sortMessages(items: Messages): ChatMessage[] {
 
 export function streamText(stream: Stream): string {
   return Object.values(stream.calls)
-    .map((call) => call.parts.join(''))
+    .map((call) => Object.values(call.parts).join(''))
     .filter(Boolean)
     .join('\n\n');
 }
@@ -40,8 +40,7 @@ export function applyDelta(streams: Streams, { taskId, callId, attempt, i, text 
   const stream = streams[taskId] ?? { calls: {}, hidden: false };
   const call = stream.calls[callId];
   if (call && attempt < call.attempt) return streams;
-  const parts = call?.attempt === attempt ? [...call.parts] : [];
-  parts[i] = text;
+  const parts = { ...(call?.attempt === attempt ? call.parts : {}), [i]: text };
   return { ...streams, [taskId]: { calls: { ...stream.calls, [callId]: { attempt, parts } }, hidden: false } };
 }
 

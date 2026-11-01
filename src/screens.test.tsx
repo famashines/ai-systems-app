@@ -672,6 +672,16 @@ describe('Live', () => {
       expect(await screen.findByText('Sending')).toBeOnTheScreen();
     });
 
+    it('keeps the thread and shows the error when a snapshot read fails', async () => {
+      server.on(threadRoute, json(200, { items: [owner(ids.taskA, 'Kept')], headSeq: 10 }), json(503, { type: 'about:blank', title: 'Down', status: 503, code: 'unavailable' }));
+      await show(<Chat />);
+      const socket = await connect();
+      await screen.findByText('Kept');
+      await act(async () => socket.receive({ type: 'resync', reason: 'too_old' }));
+      expect(await screen.findByText('The messages did not load.')).toBeOnTheScreen();
+      expect(screen.getByText('Kept')).toBeOnTheScreen();
+    });
+
     it('drops the sent message when the thread snapshot has its messageId', async () => {
       server.on(threadRoute, json(200, { items: [], headSeq: 10 }), json(200, { items: [owner(ids.taskB, 'Plan')], headSeq: 12 }));
       server.on(postRoute, posted());
@@ -859,6 +869,15 @@ describe('Live', () => {
       expect(await screen.findByText('The budget did not load.')).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
       expect(await screen.findByText('Month 2026-11')).toBeOnTheScreen();
+    });
+
+    it('shows the offline state when there is no connection at the start', async () => {
+      await show(<Budget />);
+      const socket = await socketNumber(1);
+      await act(async () => socket.serverClose(1006));
+      expect(await screen.findByText('Offline. You can change the cap when the connection is back.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      await socketNumber(2);
     });
 
     it('is in Urdu, right to left, with the offline note', async () => {

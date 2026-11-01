@@ -217,7 +217,8 @@ app                                api-gateway / socket-gateway
   refusal reply to a second message does not stop the live text of a
   running task. At most 50 topics in total, the newest tasks first.
 - Deltas: the state is kept by `(taskId, callId)`. The text is the parts
-  in index order; a lost delta is a gap. When `attempt` grows, the app
+  in index order (an object by index, so a large `i` costs no memory); a
+  lost delta is a gap. When `attempt` grows, the app
   drops the text of the earlier attempt and starts again at `i = 0`. A
   delta of an older attempt is dropped. When the agent reply of the task
   comes, it replaces the live text. A later delta of the same task shows
@@ -342,6 +343,9 @@ audience `ai-systems-app` and the role `owner`.
   (conversation-hub steers a blocked task only with its `taskId`).
 - A task that is older than the loaded task list and whose newest thread
   message is an owner message stays subscribed (at most 47 task topics).
+- Each `conversation:<id>` and `budget` notice also moves the `lastSeq`
+  of the task cache, so the app writes `live.tasks` for each notice, the
+  same as for a `tasks` notice.
 - The task list still pages with `items.length === limit`. The task list
   of projections is not limited by bytes, so this is correct for it, but
   it is not the rule of the thread.
