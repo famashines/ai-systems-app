@@ -136,7 +136,7 @@ describe('Lock', () => {
     jest.mocked(LocalAuthentication.authenticateAsync).mockResolvedValue({ success: false, error: 'user_cancel' });
     await show(<LockScreen />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Unlock did not complete. Try again.');
-    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledWith({ promptMessage: 'Unlock AI Systems' });
+    expect(LocalAuthentication.authenticateAsync).toHaveBeenCalledWith({ promptMessage: 'Unlock ai.famashines' });
   });
 
   it('asks again from the retry button', async () => {
