@@ -1,6 +1,6 @@
 import type { Topic } from '@famashines/ai-systems-contracts';
 
-import { applyDelta, chatReducer, chatTopics, emptyChat, sortMessages, streamText, type ChatMessage, type Delta } from '@/lib/chat';
+import { applyDelta, chatReducer, chatTopics, emptyChat, sortMessages, streamText, visibleStreams, type ChatMessage, type Delta } from '@/lib/chat';
 import { ids } from '@/test-fakes';
 
 const conversationId = 'd4444444-4444-4444-8444-444444444444';
@@ -85,10 +85,23 @@ describe('thread', () => {
     expect(chatReducer(emptyChat, { type: 'page', items: [], first: true })).toMatchObject({ loaded: true, hasMore: false, cursor: null });
   });
 
+  it('starts the paging again when a reload of the first page shares no message with the stored items', () => {
+    let state = chatReducer(emptyChat, { type: 'page', items: [], first: true });
+    expect(state).toMatchObject({ loaded: true, hasMore: false, cursor: null });
+    state = chatReducer(state, { type: 'page', items: [owner(ids.taskB)], first: true });
+    expect(state).toMatchObject({ hasMore: true, cursor: { beforeId: ids.taskB } });
+    state = chatReducer(state, { type: 'page', items: [owner(ids.taskA)], first: false });
+    state = chatReducer(state, { type: 'page', items: [owner(ids.taskC)], first: true });
+    expect(Object.keys(state.items)).toEqual([ids.taskC]);
+    expect(state).toMatchObject({ hasMore: true, cursor: { beforeId: ids.taskC } });
+    state = chatReducer(state, { type: 'page', items: [], first: true });
+    expect(state).toMatchObject({ items: {}, hasMore: false, cursor: null });
+  });
+
   it('keeps the deeper cursor when the first page loads again', () => {
     let state = chatReducer(emptyChat, { type: 'page', items: [owner(ids.taskB)], first: true });
     state = chatReducer(state, { type: 'page', items: [owner(ids.taskA)], first: false });
-    state = chatReducer(state, { type: 'page', items: [owner(ids.taskC)], first: true });
+    state = chatReducer(state, { type: 'page', items: [owner(ids.taskC), owner(ids.taskB)], first: true });
     expect(state.cursor?.beforeId).toBe(ids.taskA);
   });
 
@@ -120,6 +133,28 @@ describe('thread', () => {
     state = chatReducer(state, { type: 'unsubscribed', topics: ['budget', `task:${ids.taskA}`] });
     expect(state.streams).toEqual({});
     expect(chatReducer(state, { type: 'clear' })).toBe(emptyChat);
+  });
+});
+
+describe('visible streams', () => {
+  it('keeps the live text after a refusal reply while the task runs, and hides it after the final reply of a completed or failed task', () => {
+    let state = chatReducer(emptyChat, { type: 'delta', delta: delta(0, 'Working') });
+    state = chatReducer(state, { type: 'notice', notice: notice(3, agent(ids.taskC, ids.taskA)), conversationId });
+    const rows = (status?: 'running' | 'completed' | 'failed' | 'blocked') => visibleStreams(state.streams, () => status);
+    expect(rows('running')).toEqual([{ taskId: ids.taskA, text: 'Working' }]);
+    expect(rows(undefined)).toHaveLength(1);
+    expect(rows('blocked')).toHaveLength(1);
+    expect(rows('completed')).toEqual([]);
+    expect(rows('failed')).toEqual([]);
+    state = chatReducer(state, { type: 'delta', delta: delta(1, ' more') });
+    expect(rows('completed')).toEqual([{ taskId: ids.taskA, text: 'Working more' }]);
+  });
+
+  it('lists the newest stream first and leaves out a stream with no text', () => {
+    let streams = applyDelta({}, delta(0, 'Old'));
+    streams = applyDelta(streams, delta(0, 'New', 1, callA, ids.taskB));
+    streams = applyDelta(streams, delta(0, '', 1, callA, ids.taskC));
+    expect(visibleStreams(streams, () => 'running').map((row) => row.taskId)).toEqual([ids.taskB, ids.taskA]);
   });
 });
 

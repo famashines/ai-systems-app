@@ -8,7 +8,7 @@ import * as api from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
 import { config } from '@/lib/config';
-import { chatReducer, chatTopics, emptyChat, sortMessages, streamText, type ChatMessage } from '@/lib/chat';
+import { chatReducer, chatTopics, emptyChat, sortMessages, visibleStreams, type ChatMessage } from '@/lib/chat';
 import { LiveClient, type AuthLost, type LiveStatus, type Notice } from '@/lib/live';
 import { useSession } from '@/state/session';
 
@@ -136,7 +136,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const conversation = useRef<string | null>(null);
   const run = useRef(0);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const budgetRuns = useRef({ running: false, again: false });
+  const budgetRuns = useRef<{ loading: number | null; again: boolean }>({ loading: null, again: false });
 
   const loadTasks = async () => {
     const mine = run.current;
@@ -166,12 +166,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   };
   const loadBudget = async (): Promise<void> => {
     const runs = budgetRuns.current;
-    if (runs.running) {
+    const mine = run.current;
+    if (runs.loading === mine) {
       runs.again = true;
       return;
     }
-    runs.running = true;
-    const mine = run.current;
+    runs.loading = mine;
     setBudget((current) => ({ ...current, load: 'loading' }));
     try {
       const doc = await api.getBudget();
@@ -179,7 +179,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     } catch {
       if (mine === run.current) setBudget((current) => ({ ...current, load: 'error' }));
     } finally {
-      runs.running = false;
+      if (runs.loading === mine) runs.loading = null;
       if (runs.again && mine === run.current) {
         runs.again = false;
         void loadBudget();
@@ -289,6 +289,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       clearTimeout(reloadState.timer);
       reloadState.timer = undefined;
       reloadState.again = false;
+      budgetState.loading = null;
       budgetState.again = false;
       dispatch({ type: 'clear' });
       dispatchChat({ type: 'clear' });
@@ -359,11 +360,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const online = signedIn && status === 'live';
   const sorted = sortTasks(tasks.items);
-  const streams = Object.entries(chat.streams)
-    .filter(([, stream]) => !stream.hidden)
-    .map(([taskId, stream]) => ({ taskId, text: streamText(stream) }))
-    .filter((row) => row.text)
-    .reverse();
+  const streams = visibleStreams(chat.streams, (taskId) => tasks.items[taskId]?.status);
 
   const value: Value = {
     status,

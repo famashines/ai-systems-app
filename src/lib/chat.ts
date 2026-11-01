@@ -22,6 +22,7 @@ export const emptyChat: ChatState = { items: {}, streams: {}, cursor: null, hasM
 
 const baseTopics = 3;
 const closed = new Set<TaskStatus>(['blocked', 'completed', 'failed', 'cancelled', 'rejected']);
+const ended = new Set<TaskStatus>(['completed', 'failed']);
 
 export function sortMessages(items: Messages): ChatMessage[] {
   return Object.values(items).sort(
@@ -76,12 +77,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'page': {
       const last = action.items.at(-1);
-      const keep = action.first && state.loaded;
+      const keep = action.first && state.loaded && action.items.some((item) => item.messageId in state.items);
+      const base = action.first && !keep ? {} : state.items;
       return {
         ...state,
-        items: merge(state.items, action.items),
+        items: merge(base, action.items),
         streams: hideReplied(state.streams, state.items, action.items),
-        cursor: keep || !last ? state.cursor : { before: last.createdAt, beforeId: last.messageId },
+        cursor: keep ? state.cursor : last ? { before: last.createdAt, beforeId: last.messageId } : action.first ? null : state.cursor,
         hasMore: keep ? state.hasMore : action.items.length > 0,
         loaded: true,
       };
@@ -101,6 +103,17 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'clear':
       return emptyChat;
   }
+}
+
+export function visibleStreams(streams: Streams, status: (taskId: string) => TaskStatus | undefined): { taskId: string; text: string }[] {
+  return Object.entries(streams)
+    .filter(([taskId, stream]) => {
+      const now = status(taskId);
+      return !stream.hidden || now === undefined || !ended.has(now);
+    })
+    .map(([taskId, stream]) => ({ taskId, text: streamText(stream) }))
+    .filter((row) => row.text)
+    .reverse();
 }
 
 export function chatTopics(conversationId: string, newestFirst: { role: 'owner' | 'agent'; taskId?: string }[], status: (taskId: string) => TaskStatus | undefined): Topic[] {
