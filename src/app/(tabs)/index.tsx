@@ -127,10 +127,11 @@ function Older() {
 
 function Thread({ onReply }: { onReply: Reply }) {
   const { t } = useSettings();
-  const { pending, streams, thread, threadLoad, threadLoaded, reloadThread, loadOlder, details } = useLive();
+  const { pending, streams, thread, threadLoad, threadLoaded, reloadThread, loadOlder, details, tasks } = useLive();
+  const listed = (taskId: string) => tasks.find((item) => item.taskId === taskId)?.status ?? 'awaiting_approval';
   const planned = [...new Set(thread.map((message) => message.taskId).filter((taskId): taskId is string => taskId !== undefined))]
     .map((taskId) => details[taskId])
-    .filter((detail): detail is TaskDetailV1 => detail?.status === 'awaiting_approval' && detail.plan !== undefined);
+    .filter((detail): detail is TaskDetailV1 => detail?.status === 'awaiting_approval' && detail.plan !== undefined && listed(detail.taskId) === 'awaiting_approval');
   const rows: Row[] = [
     ...pending.map((message): Row => ({ kind: 'pending', message })),
     ...planned.map((detail): Row => ({ kind: 'plan', detail })),
