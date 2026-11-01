@@ -420,7 +420,7 @@ EXPO_PUBLIC_OIDC_ISSUER=<issuer URL that the emulator and the containers both re
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 \
 EXPO_PUBLIC_WS_URL=ws://10.0.2.2:8081/ws npm run android
 adb shell pm clear com.android.chrome
-maestro test .maestro/live-tasks.yaml .maestro/budget-cap.yaml \
+maestro test .maestro/live-tasks.yaml .maestro/budget-cap.yaml .maestro/plan-approval.yaml \
   -e API_URL=http://localhost:8080 \
   -e ISSUER=<the same issuer URL, as the host reaches it> \
   -e TOKEN_CLIENT_ID=<client with the password grant> \
