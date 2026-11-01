@@ -48,12 +48,12 @@ it('guards the login when signed in', async () => {
   await open(true, '/login');
   expect(await screen.findByText('chat content')).toBeOnTheScreen();
   expect(screen.queryByText('login content', { includeHiddenElements: true })).toBeNull();
-  expect(screen.queryByText('ai.famashines is locked')).toBeNull();
+  expect(screen.queryByText('Fama AI is locked')).toBeNull();
 });
 
 it('covers the content with the lock and hides it from accessibility', async () => {
   await open(true);
-  expect(await screen.findByText('ai.famashines is locked')).toBeOnTheScreen();
+  expect(await screen.findByText('Fama AI is locked')).toBeOnTheScreen();
   expect(screen.queryByText('chat content')).toBeNull();
   let node = screen.getByText('chat content', { includeHiddenElements: true }).parent;
   while (node && node.props.importantForAccessibility !== 'no-hide-descendants') node = node.parent;

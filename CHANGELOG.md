@@ -2,14 +2,26 @@
 
 ## Unreleased
 
-### Changed (app name)
+### Changed (app name Fama AI)
 
-- The in-app text uses the name `ai.famashines` (app name, lock screen
-  title and unlock prompt) in English, German and Urdu.
+- The app name is `Fama AI` (launcher label, in-app text, lock screen
+  title and unlock prompt in English, German and Urdu, privacy policy and
+  release guide). The package `com.famashines.ai` does not change.
+
+### Added (logo master)
+
+- `logo-master/`: the mark geometry, the master SVGs, the construction
+  drawing, the small-size proof and `SPEC.md` (rules, colours, clear
+  space, minimum size and the asset table).
+- `scripts/build-logo-assets.py` makes the app icons, the splash icons,
+  the 512 px Play icon and the 1024 x 500 feature graphic from the
+  masters, and checks them against `src/theme.ts` and `app.json`.
+- The mark keeps its design. Its geometry is now exact (an equilateral
+  triangle, R = 32 units) and it is placed on its optical centre.
 
 ### Added (first Google Play release)
 
-- The app name is `ai.famashines`, version 1.0.0.
+- Version 1.0.0.
 - The EAS project `@m-yahya/ai-systems`.
 - The app icon, the adaptive icon (with a monochrome layer), the splash
   icon for light and dark, and the 512 px Play icon.

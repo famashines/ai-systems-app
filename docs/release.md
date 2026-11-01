@@ -1,6 +1,6 @@
 # Release to Google Play
 
-The app is `ai.famashines` in Google Play, package `com.famashines.ai`.
+The app is `Fama AI` in Google Play, package `com.famashines.ai`.
 The Expo project is `@m-yahya/ai-systems`. Releases go to the internal
 testing track (ADR 0012).
 
@@ -35,7 +35,7 @@ these steps in Play Console one time.
 
 1. On the tip of `main`, run `npm ci`, then `npm run aab`. This gives
    `ai-systems-1.0.0.aab`.
-2. Create the app: **Home > Create app**. App name `ai.famashines`,
+2. Create the app: **Home > Create app**. App name `Fama AI`,
    default language English (United States), **App**, **Free**. Accept the
    declarations.
 3. Testers: **Test and release > Testing > Internal testing > Testers**.
@@ -55,6 +55,29 @@ these steps in Play Console one time.
 6. Give the service account access (section 4).
 7. Send the opt-in link to the testers. They join, then install the app
    from Google Play.
+
+### Store listing
+
+**Grow users > Store presence > Main store listing**:
+
+| Field | Value |
+| ----- | ----- |
+| App name | `Fama AI` |
+| App icon | `play-store-assets/app-icon-512.png` |
+| Feature graphic | `play-store-assets/feature-graphic.png` |
+
+`python3 scripts/build-logo-assets.py` makes both graphics from
+`logo-master/` (see `logo-master/SPEC.md`). Do not edit them by hand.
+
+### Rename from ai.famashines
+
+Version 1.0.0 (version code 2) is in internal testing with the old
+launcher label `ai.famashines` and the old icon. Change the app name in
+the store listing (above), and upload the two graphics. The next release
+(section 5) brings the new launcher label and icon to the devices.
+
+The package `com.famashines.ai` does not change. Google Play does not let
+you change it after the first upload.
 
 ## 3. App content forms
 
@@ -100,7 +123,7 @@ Use the service account that Taseen uses:
 
 1. In Play Console open **Users and permissions**, then **Invite new
    users**, and enter the service account email.
-2. In **App permissions** add `ai.famashines`. Give **Release apps to
+2. In **App permissions** add `Fama AI`. Give **Release apps to
    testing tracks** and **View app information**.
 3. Send the invitation. A service account does not need to accept it.
 4. In this repository, make `.env` from `.env.example` and set
