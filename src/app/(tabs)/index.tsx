@@ -6,7 +6,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } f
 import { Menu } from '@/components/drawer';
 import { LiveBar } from '@/components/live-bar';
 import { PlanActions, PlanSummary } from '@/components/task';
-import { AppText, Button, Card, IconButton, Screen, StateView } from '@/components/ui';
+import { AppText, Button, Card, Icon, IconButton, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { taskTextMax } from '@/lib/api';
 import type { ChatMessage } from '@/lib/chat';
@@ -254,11 +254,9 @@ export default function Chat() {
               disabled={!online || replyTo !== null}
               onPress={() => setNewTask((on) => !on)}
               android_ripple={{ color: colors.outlineVariant }}
-              style={[
-                styles.toggle,
-                { borderColor: newTask ? colors.primary : colors.outline, backgroundColor: newTask ? colors.primaryContainer : 'transparent', opacity: online && replyTo === null ? 1 : 0.38 },
-              ]}
+              style={[styles.toggle, { backgroundColor: newTask ? colors.primaryContainer : 'transparent', opacity: online && replyTo === null ? 1 : 0.38 }]}
             >
+              <Icon name={{ ios: 'plus', android: 'add', web: 'add' }} color={newTask ? 'onPrimaryContainer' : 'onSurfaceVariant'} size={20} />
               <AppText variant="label" color={newTask ? 'onPrimaryContainer' : 'onSurfaceVariant'}>
                 {t('chat.newTask')}
               </AppText>
@@ -284,6 +282,6 @@ const styles = StyleSheet.create({
   composer: { gap: spacing.sm, paddingBottom: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   card: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.xl, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },
-  toggle: { minHeight: touchTarget, minWidth: touchTarget, justifyContent: 'center', paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.full },
+  toggle: { minHeight: touchTarget, minWidth: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.full, overflow: 'hidden' },
   input: { minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.sm, paddingTop: spacing.sm, textAlign: 'auto', textAlignVertical: 'top' },
 });

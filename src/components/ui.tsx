@@ -39,7 +39,7 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      android_ripple={{ color: colors.outlineVariant, borderless: true }}
+      android_ripple={{ color: colors.outlineVariant, borderless: !filled }}
       style={({ pressed }) => [styles.iconButton, { backgroundColor: filled ? colors.primary : 'transparent', opacity: disabled ? 0.38 : pressed ? 0.7 : 1 }]}
     >
       <Icon name={icon} color={filled ? 'onPrimary' : 'onSurface'} size={filled ? 22 : 24} />
