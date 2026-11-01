@@ -484,8 +484,8 @@ it('subscribes and unsubscribes the changed topics, and sends every topic in the
   client.setTopics(['tasks', 'budget']);
   client.setTopics(['tasks', `task:${ids.taskA}`]);
   expect(first.sent.slice(2)).toEqual([
-    { type: 'subscribe', topics: [`task:${ids.taskA}`] },
     { type: 'unsubscribe', topics: ['budget'] },
+    { type: 'subscribe', topics: [`task:${ids.taskA}`] },
   ]);
   first.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 90 });
   expect(options.onSubscribed).toHaveBeenCalledTimes(1);
@@ -516,4 +516,30 @@ it('passes deltas only for subscribed task topics', async () => {
   FakeSocket.last().receive('{"type":"delta","taskId":"x","callId":"y","i":0,"text":"no attempt"}');
   expect(jest.mocked(options.onDelta).mock.calls.map(([frame]) => frame.taskId)).toEqual([ids.taskA]);
   expect(options.onResync).not.toHaveBeenCalled();
+});
+
+it('forgets a refused subscribe and sends its topics again on the next change and after a reconnect', async () => {
+  const { client, options } = setup({ topics: ['tasks'] });
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  const first = FakeSocket.last();
+  client.setTopics(['tasks', `task:${ids.taskA}`]);
+  first.receive({ type: 'error', code: 'unavailable', message: 'The token cannot be checked now' });
+  first.receive({ type: 'error', code: 'validation_failed', message: 'At most 50 topics for each connection' });
+  expect(client.refusedSubscribes).toBe(1);
+  first.receive({ type: 'error', code: 'validation_failed', message: 'No frame waits' });
+  expect(client.refusedSubscribes).toBe(1);
+  client.setTopics(['tasks', `task:${ids.taskA}`, `task:${ids.taskB}`]);
+  expect(first.sent.slice(2)).toEqual([
+    { type: 'subscribe', topics: [`task:${ids.taskA}`] },
+    { type: 'subscribe', topics: [`task:${ids.taskA}`, `task:${ids.taskB}`] },
+  ]);
+  first.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`, `task:${ids.taskB}`], fromSeq: 40 });
+  expect(options.onSubscribed).toHaveBeenCalledTimes(1);
+  first.serverClose(1006);
+  await jest.advanceTimersByTimeAsync(1_000);
+  await connect(FakeSocket.last(), 11);
+  expect(FakeSocket.last().sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', `task:${ids.taskA}`, `task:${ids.taskB}`] });
+  expect(options.onSubscribed).toHaveBeenCalledTimes(2);
 });
