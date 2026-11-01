@@ -27,8 +27,12 @@ export default function Login() {
   return (
     <Screen title={t('app.name')}>
       <View style={styles.body}>
-        <AppText variant="headline">{t('login.title')}</AppText>
-        <AppText color="onSurfaceVariant">{t('login.body')}</AppText>
+        <AppText variant="headline" style={styles.center}>
+          {t('login.title')}
+        </AppText>
+        <AppText color="onSurfaceVariant" style={styles.center}>
+          {t('login.body')}
+        </AppText>
         {ended && state === 'idle' ? (
           <AppText color="error" accessibilityRole="alert" accessibilityLiveRegion="polite">
             {t(ended === 'refused' ? 'login.refused' : 'login.ended')}
@@ -50,5 +54,6 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  body: { flex: 1, justifyContent: 'center', gap: spacing.md },
+  body: { flex: 1, justifyContent: 'center', gap: spacing.md, paddingBottom: spacing.xl },
+  center: { textAlign: 'center' },
 });

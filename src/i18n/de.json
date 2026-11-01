@@ -20,7 +20,7 @@
   "tabs.settings": "Einstellungen",
   "chat.empty": "Noch keine Nachrichten.",
   "chat.inputLabel": "Nachricht",
-  "chat.placeholder": "Nachricht schreiben",
+  "chat.placeholder": "Fama AI antworten",
   "chat.send": "Senden",
   "tasks.empty": "Noch keine Aufgaben.",
   "tasks.emptyHint": "Aufgaben, die Sie im Chat starten, erscheinen hier.",
@@ -211,5 +211,10 @@
   "task.labelled": "{label}: {text}",
   "task.subtaskLabel": "{title}. {status}. {facts}",
   "task.statusLabel": "{status}. {facts}",
-  "plan.itemLabel": "{title}. {facts}"
+  "plan.itemLabel": "{title}. {facts}",
+  "drawer.open": "Menü öffnen",
+  "drawer.close": "Menü schließen",
+  "drawer.recent": "Letzte Aufgaben",
+  "drawer.task": "{title}. {status}",
+  "chat.startNewTask": "Neue Aufgabe beginnen"
 }

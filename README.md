@@ -9,9 +9,10 @@ src/
 ├── app/              routes only
 │   ├── _layout.tsx   providers, login guard, lock overlay
 │   ├── login.tsx
-│   ├── (tabs)/       chat (index), tasks, budget, settings
+│   ├── (tabs)/       chat (index), tasks, budget, settings; tabs with no tab bar, the side menu opens them
 │   └── task/[id].tsx task detail: plan, DAG by steps, live output, controls, timeline
-├── components/       ui.tsx (Screen, AppText, Button, StateView), lock-screen.tsx, live-bar.tsx,
+├── components/       ui.tsx (Screen with header, AppText, Icon, IconButton, Button, Card, StateView),
+│                     drawer.tsx (side menu: sections and recent tasks), lock-screen.tsx, live-bar.tsx,
 │                     task.tsx (status chip, plan summary, plan actions, plan editor, useControl)
 ├── i18n/             en.json, de.json, ur.json, t()
 ├── lib/              auth, lock, cache, config, api (HTTP), live (WebSocket client),
@@ -111,6 +112,11 @@ reason in this section.
   lock the app (a mark valid for 30 seconds). A reload after a change of
   the device language locks as a normal cold start.
 - Theme: follows the device, with an override in Settings.
+- Navigation: the menu button at the start of the header opens a side menu
+  (Chat, Tasks, Budget, Settings and the 10 newest tasks). The menu comes
+  from the left, and from the right in Urdu. A tap on the dimmed area, the
+  close button or the back button closes it. The back button on Tasks,
+  Budget or Settings goes to Chat.
 - Live connection: one WebSocket for each signed-in session (also while
   locked). See "Live tasks", "Chat" and "Budget" below.
 

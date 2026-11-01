@@ -1,18 +1,18 @@
 import { Id, type CheckpointDecision, type PlanSubtask, type TaskDetailV1 } from '@famashines/ai-systems-contracts';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { I18nManager, ScrollView, StyleSheet, View } from 'react-native';
 
 import { LiveBar } from '@/components/live-bar';
 import { AgentChoice, Choice, Confirm, Field, OutcomeText, PlanActions, PlanEditor, StatusChip, statusLabel, useAgentName, useControl } from '@/components/task';
-import { AppText, Button, Screen, StateView } from '@/components/ui';
+import { AppText, Button, Card, IconButton, Screen, StateView } from '@/components/ui';
 import { formatTime } from '@/i18n';
 import * as api from '@/lib/api';
 import { formatUsd } from '@/lib/money';
 import { levels, openCheckpoint, stateOf, subtaskControls, taskControls, timeline } from '@/lib/task';
 import { useLive } from '@/state/live';
 import { useSettings } from '@/state/settings';
-import { radius, spacing } from '@/theme';
+import { spacing } from '@/theme';
 
 type Outputs = Record<string, string | null | 'error'>;
 
@@ -73,8 +73,8 @@ function Controls({ detail }: { detail: TaskDetailV1 }) {
   return (
     <View style={styles.block}>
       <View style={styles.row}>
-        {allowed.pause ? <Button label={t('control.pause')} variant="tonal" busy={busy === 'pause-run'} disabled={off} onPress={() => void run('pause-run', {})} /> : null}
-        {allowed.resume ? <Button label={t('control.resume')} variant="tonal" busy={busy === 'resume-run'} disabled={off} onPress={() => void run('resume-run', {})} /> : null}
+        {allowed.pause ? <Button label={t('control.pause')} variant="outline" busy={busy === 'pause-run'} disabled={off} onPress={() => void run('pause-run', {})} /> : null}
+        {allowed.resume ? <Button label={t('control.resume')} variant="outline" busy={busy === 'resume-run'} disabled={off} onPress={() => void run('resume-run', {})} /> : null}
         {allowed.cancelRun ? <Confirm label={t('control.cancelRun')} confirmLabel={t('control.cancelRunConfirm')} busy={busy === 'cancel-run'} disabled={off} onConfirm={() => void run('cancel-run', {})} /> : null}
         {allowed.cancelTask ? <Confirm label={t('control.cancelTask')} confirmLabel={t('control.cancelTaskConfirm')} busy={busy === 'cancel-task'} disabled={off} onConfirm={() => void run('cancel-task', {})} /> : null}
       </View>
@@ -118,7 +118,7 @@ function Checkpoint({ detail, subtaskId }: { detail: TaskDetailV1; subtaskId: st
       <Field label={t('checkpoint.comment')} value={comment} onChange={setComment} max={1000} />
       <View style={styles.row}>
         <Button label={t('checkpoint.approve')} busy={deciding && decision === 'approved'} disabled={!online || busy !== null} onPress={() => decide('approved')} />
-        <Button label={t('checkpoint.refuse')} variant="tonal" busy={deciding && decision === 'refused'} disabled={!online || busy !== null} onPress={() => decide('refused')} />
+        <Button label={t('checkpoint.refuse')} variant="outline" busy={deciding && decision === 'refused'} disabled={!online || busy !== null} onPress={() => decide('refused')} />
       </View>
       <OutcomeText outcome={outcome} />
     </View>
@@ -126,7 +126,7 @@ function Checkpoint({ detail, subtaskId }: { detail: TaskDetailV1; subtaskId: st
 }
 
 function Subtask({ detail, subtask, titles, output }: { detail: TaskDetailV1; subtask: PlanSubtask; titles: Map<string, string>; output: string | null | 'error' | undefined }) {
-  const { t, language, colors } = useSettings();
+  const { t, language } = useSettings();
   const agentName = useAgentName();
   const { run, busy, outcome, online } = useControl(detail.taskId);
   const [reassigning, setReassigning] = useState(false);
@@ -140,7 +140,7 @@ function Subtask({ detail, subtask, titles, output }: { detail: TaskDetailV1; su
   if (state && state.costMicroUsd > 0) facts.push(t('chat.cost', { cost: formatUsd(language, state.costMicroUsd) }));
   if (state?.retryAt) facts.push(t('task.retryAt', { time: formatTime(language, state.retryAt) }));
   return (
-    <View testID={`subtask-${subtask.subtaskId}`} style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
+    <Card testID={`subtask-${subtask.subtaskId}`}>
       <View accessible accessibilityLabel={t('task.subtaskLabel', { title: subtask.title, status: statusLabel(t, state?.status ?? 'none', true), facts: facts.join('. ') })} style={styles.block}>
         <AppText>{subtask.title}</AppText>
         <StatusChip status={state?.status ?? 'none'} subtask />
@@ -157,8 +157,8 @@ function Subtask({ detail, subtask, titles, output }: { detail: TaskDetailV1; su
       {state?.status === 'running' && state.callId ? <LiveOutput taskId={detail.taskId} callId={state.callId} label={t('task.live')} /> : null}
       {state?.status === 'done' ? <Output label={t('task.output')} text={output} /> : null}
       <View style={styles.row}>
-        {allowed.retry ? <Button label={t('control.retry')} variant="tonal" busy={busy === 'retry-subtask'} disabled={!online || busy !== null} onPress={() => void run('retry-subtask', { subtaskId: subtask.subtaskId })} /> : null}
-        {allowed.reassign ? <Button label={t('control.reassign')} variant="tonal" disabled={!online || busy !== null} onPress={() => setReassigning((on) => !on)} /> : null}
+        {allowed.retry ? <Button label={t('control.retry')} variant="outline" busy={busy === 'retry-subtask'} disabled={!online || busy !== null} onPress={() => void run('retry-subtask', { subtaskId: subtask.subtaskId })} /> : null}
+        {allowed.reassign ? <Button label={t('control.reassign')} variant="outline" disabled={!online || busy !== null} onPress={() => setReassigning((on) => !on)} /> : null}
       </View>
       {allowed.reassign && reassigning ? (
         <View style={styles.block}>
@@ -172,7 +172,7 @@ function Subtask({ detail, subtask, titles, output }: { detail: TaskDetailV1; su
         </View>
       ) : null}
       <OutcomeText outcome={outcome} />
-    </View>
+    </Card>
   );
 }
 
@@ -253,10 +253,16 @@ export default function TaskScreen() {
   const title = detail?.title ?? tasks.find((item) => item.taskId === taskId)?.title ?? t('task.title');
   const load = taskId ? detailLoad[taskId] : 'error';
   return (
-    <Screen title={title}>
-      <View style={styles.row}>
-        <Button label={t('task.back')} variant="tonal" onPress={() => (router.canGoBack() ? router.back() : router.replace('/tasks'))} />
-      </View>
+    <Screen
+      title={title}
+      start={
+        <IconButton
+          icon={I18nManager.isRTL ? { ios: 'chevron.right', android: 'arrow_forward', web: 'arrow_forward' } : { ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
+          label={t('task.back')}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/tasks'))}
+        />
+      }
+    >
       <LiveBar />
       {detail ? (
         <Detail detail={detail} editing={editing} setEditing={setEditing} />
@@ -273,5 +279,4 @@ const styles = StyleSheet.create({
   scroll: { gap: spacing.md, paddingBottom: spacing.xl },
   block: { gap: spacing.sm },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  card: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.lg },
 });

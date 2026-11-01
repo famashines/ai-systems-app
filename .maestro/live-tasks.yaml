@@ -45,6 +45,8 @@ env:
 - extendedWaitUntil:
     visible: "Received"
     timeout: 15000
+- tapOn:
+    id: "menu"
 - tapOn: "Tasks"
 - assertVisible: ${output.online}
 - setAirplaneMode: enabled

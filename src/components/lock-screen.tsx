@@ -55,7 +55,7 @@ export function LockScreen() {
         </AppText>
       ) : null}
       <Button label={failed ? t('common.retry') : t('lock.button')} onPress={attempt} busy={busy} disabled={leaving === 'busy'} />
-      <Button label={t('settings.signOut')} onPress={leave} variant="tonal" busy={leaving === 'busy'} />
+      <Button label={t('settings.signOut')} onPress={leave} variant="outline" busy={leaving === 'busy'} />
     </View>
   );
 }

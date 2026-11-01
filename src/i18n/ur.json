@@ -20,7 +20,7 @@
   "tabs.settings": "ترتیبات",
   "chat.empty": "ابھی کوئی پیغام نہیں۔",
   "chat.inputLabel": "پیغام",
-  "chat.placeholder": "پیغام لکھیں",
+  "chat.placeholder": "Fama AI کو جواب دیں",
   "chat.send": "بھیجیں",
   "tasks.empty": "ابھی کوئی کام نہیں۔",
   "tasks.emptyHint": "چیٹ میں شروع کیے گئے کام یہاں نظر آئیں گے۔",
@@ -211,5 +211,10 @@
   "task.labelled": "{label}: {text}",
   "task.subtaskLabel": "{title}۔ {status}۔ {facts}",
   "task.statusLabel": "{status}۔ {facts}",
-  "plan.itemLabel": "{title}۔ {facts}"
+  "plan.itemLabel": "{title}۔ {facts}",
+  "drawer.open": "مینو کھولیں",
+  "drawer.close": "مینو بند کریں",
+  "drawer.recent": "حالیہ کام",
+  "drawer.task": "{title}۔ {status}",
+  "chat.startNewTask": "نیا کام شروع کریں"
 }
