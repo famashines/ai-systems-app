@@ -131,12 +131,11 @@ export function Field({ label, value, onChange, multiline = false, max }: { labe
 
 export function Choice({ label, selected, onPress, role = 'radio', disabled = false }: { label: string; selected: boolean; onPress: () => void; role?: 'radio' | 'checkbox' | 'switch'; disabled?: boolean }) {
   const { colors } = useSettings();
-  const state = role === 'radio' ? { selected, disabled } : { checked: selected, disabled };
   return (
     <Pressable
       accessibilityRole={role}
       accessibilityLabel={label}
-      accessibilityState={state}
+      accessibilityState={{ checked: selected, disabled }}
       disabled={disabled}
       onPress={onPress}
       android_ripple={{ color: colors.outlineVariant }}

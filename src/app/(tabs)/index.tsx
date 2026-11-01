@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } f
 
 import { Menu } from '@/components/drawer';
 import { LiveBar } from '@/components/live-bar';
+import { ModelPicker, useChoice } from '@/components/model-picker';
 import { PlanActions, PlanSummary } from '@/components/task';
 import { AppText, Button, Card, Icon, IconButton, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
@@ -183,10 +184,11 @@ export default function Chat() {
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const replyTitle = replyTo ? (details[replyTo]?.title ?? tasks.find((item) => item.taskId === replyTo)?.title ?? t('task.title')) : null;
   const canSend = online && text.trim() !== '';
+  const choice = useChoice();
 
   const submit = () => {
     if (!canSend) return;
-    send(text, newTask, replyTo ?? undefined);
+    send(text, newTask, replyTo ?? undefined, choice);
     setText('');
     setNewTask(false);
     setReplyTo(null);
@@ -228,7 +230,20 @@ export default function Chat() {
             {t('chat.newTaskOn')}
           </AppText>
         ) : null}
-        <View style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.outline }]}>
+        <View testID="composer" style={[styles.bar, { backgroundColor: colors.surfaceContainer, borderColor: colors.outline }]}>
+          <Pressable
+            testID="new-task"
+            accessibilityRole="switch"
+            accessibilityLabel={t('chat.newTask')}
+            accessibilityHint={t('chat.newTaskHint')}
+            accessibilityState={{ checked: newTask, disabled: !online || replyTo !== null }}
+            disabled={!online || replyTo !== null}
+            onPress={() => setNewTask((on) => !on)}
+            android_ripple={{ color: colors.outlineVariant }}
+            style={[styles.round, { backgroundColor: newTask ? colors.primaryContainer : colors.surfaceContainerHigh, opacity: online && replyTo === null ? 1 : 0.38 }]}
+          >
+            <Icon name={{ ios: 'checklist', android: 'add_task', web: 'add_task' }} color={newTask ? 'onPrimaryContainer' : 'onSurfaceVariant'} size={22} />
+          </Pressable>
           <TextInput
             ref={input}
             testID="chat-input"
@@ -244,25 +259,8 @@ export default function Chat() {
             placeholderTextColor={colors.onSurfaceVariant}
             style={[styles.input, type.body, { color: colors.onSurface }]}
           />
-          <View style={styles.row}>
-            <Pressable
-              accessibilityRole="switch"
-              accessibilityLabel={t('chat.newTask')}
-              accessibilityHint={t('chat.newTaskHint')}
-              accessibilityState={{ checked: newTask, disabled: !online || replyTo !== null }}
-              disabled={!online || replyTo !== null}
-              onPress={() => setNewTask((on) => !on)}
-              android_ripple={{ color: colors.outlineVariant }}
-              style={[styles.toggle, { backgroundColor: newTask ? colors.primaryContainer : 'transparent', opacity: online && replyTo === null ? 1 : 0.38 }]}
-            >
-              <Icon name={{ ios: 'plus', android: 'add', web: 'add' }} color={newTask ? 'onPrimaryContainer' : 'onSurfaceVariant'} size={20} />
-              <AppText variant="label" color={newTask ? 'onPrimaryContainer' : 'onSurfaceVariant'}>
-                {t('chat.newTask')}
-              </AppText>
-            </Pressable>
-            <View style={styles.fill} />
-            <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled disabled={!canSend} onPress={submit} />
-          </View>
+          <ModelPicker disabled={!online || replyTo !== null} />
+          <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled disabled={!canSend} onPress={submit} />
         </View>
       </View>
     </Screen>
@@ -275,12 +273,19 @@ const styles = StyleSheet.create({
   agent: { gap: spacing.sm, alignSelf: 'stretch' },
   body: { gap: spacing.xs },
   shrink: { flexShrink: 1 },
-  fill: { flex: 1 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   older: { padding: spacing.md },
   composer: { gap: spacing.sm, paddingBottom: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  card: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.xl, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },
-  toggle: { minHeight: touchTarget, minWidth: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.full, overflow: 'hidden' },
-  input: { minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.sm, paddingTop: spacing.sm, textAlign: 'auto', textAlignVertical: 'top' },
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+    padding: spacing.xs + 2,
+    borderRadius: radius.full,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    boxShadow: shadow.composer,
+  },
+  round: { width: touchTarget, height: touchTarget, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  input: { flex: 1, minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.xs, paddingVertical: (touchTarget - type.body.lineHeight) / 2, textAlign: 'auto', textAlignVertical: 'top' },
 });

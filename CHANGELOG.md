@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added (model and effort for a task)
+
+- The chat composer is one pill-shaped row: the New task switch (a task
+  icon in place of the text), the input ("Message Fama AI..."), the model
+  chip and a round send button.
+- The model chip opens a picker with a search field, the models that the
+  API key can use (`GET /api/models`), and the reasoning efforts of the
+  chosen model. Auto is the default and sends nothing.
+- A new message with no `taskId` sends `model` and `effort`. A reply to a
+  task never sends them.
+- The choice is kept in the settings. A model that is no longer in the
+  list shows as Auto.
+- The task screen shows the model and the effort of the task.
+- When the model list does not load (503), the app reads it one more
+  time after 2 s, and again when the picker opens.
+- Contracts v0.5.0.
+
 ### Changed (calm chat look and side menu)
 
 - New warm colours: a cream background in the light theme, a warm dark

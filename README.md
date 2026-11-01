@@ -13,12 +13,14 @@ src/
 │   └── task/[id].tsx task detail: plan, DAG by steps, live output, controls, timeline
 ├── components/       ui.tsx (Screen with header, AppText, Icon, IconButton, Button, Card, StateView),
 │                     drawer.tsx (side menu: sections and recent tasks), lock-screen.tsx, live-bar.tsx,
+│                     model-picker.tsx (model chip and the model and effort picker),
 │                     task.tsx (status chip, plan summary, plan actions, plan editor, useControl)
 ├── i18n/             en.json, de.json, ur.json, t()
 ├── lib/              auth, lock, cache, config, api (HTTP), live (WebSocket client),
 │                     chat (thread, deltas, topics), money (micro-USD to text),
 │                     task (detail merge, allowed controls, DAG steps, plan draft)
-├── state/            settings (language, theme), session (login, lock), live (tasks, chat, budget)
+├── state/            settings (language, theme, model, effort), session (login, lock),
+│                     live (tasks, chat, budget, models)
 └── theme.ts          colour, spacing, type and radius tokens
 ```
 
@@ -122,9 +124,9 @@ reason in this section.
 
 ## Live tasks
 
-The app uses the contracts v0.4.1 schemas for each API answer
+The app uses the contracts v0.5.0 schemas for each API answer
 (`TaskListResultV1`, `TaskDetailV1`, `TaskOutputV1`, `AgentListResultV1`,
-`ConversationThreadResultV1`, `BudgetMonthV1`, `ProblemJson`) and each WebSocket frame
+`ModelListResultV1`, `ConversationThreadResultV1`, `BudgetMonthV1`, `ProblemJson`) and each WebSocket frame
 (`ClientMessageV1`, `ServerMessageV1`). A frame that does not parse (for
 example a message type from a later contracts version) does not close the
 socket: the app ignores it and counts it. If that frame has the type
@@ -202,7 +204,7 @@ it: 10 s after `subscribed`, or the first `notice` or `pong` after
 
 ```
 app                                api-gateway / socket-gateway
- | POST /api/conversations/<id>/messages { text, newTask }, Idempotency-Key
+ | POST /api/conversations/<id>/messages { text, newTask, model?, effort? }, Idempotency-Key
  | <-- 202 { messageId, intent, taskId? }
  | <-- notice conversation:<id> owner message { commandId }      "Received"
  | <-- notice conversation:<id> owner message rev 2 { taskId }
@@ -217,7 +219,20 @@ app                                api-gateway / socket-gateway
   (`chat.conversationId`). Sign-out keeps it, so the thread is there
   again after the next sign-in; the id has no data, and each read needs
   the token.
-- New task: the switch "New task" next to the input. When it is on, the
+- Composer: one row in a pill-shaped bar at the bottom. The lines "The
+  next message starts a new task." and "Your next message goes to the
+  task" show above the row.
+
+  ```
+  ( task ) | Message Fama AI...            | ( GPT-5 ) ( ^ )
+                                             (  High )
+   switch     input, multiline, max 160 dp   model chip  send
+  ```
+
+  Each control is 48 dp or more. The task switch has a task icon and no
+  text; TalkBack reads "New task" and its state. Send is a round filled
+  button with an arrow.
+- New task: the task switch at the start of the row. When it is on, the
   next message has `newTask: true`, and the switch goes off after the
   send. When it is off, the message has `newTask: false`, and
   conversation-hub decides: a task that waits for answers gets the
@@ -281,9 +296,56 @@ TalkBack reads each status change of a message (polite live region).
 Offline: the app keeps the task list (the newest 200 tasks) and `lastSeq`
 in the sqlite cache (key `live.tasks`), only after a snapshot. While the socket is not
 connected, the Tasks screen shows "Offline, last update hh:mm" and the
-chat input, the New task switch and Send are off, and the Budget form
+chat input, the New task switch, the model chip and Send are off, and the Budget form
 cannot save. Sign-out (also from the lock screen, or when
 the session ends) removes `live.tasks` and keeps the settings.
+
+## Model and effort
+
+The owner can choose the model and the reasoning effort of a new task.
+Auto (the default) sends nothing: each agent uses its own model chain.
+
+```
+app                                   api-gateway -> ai-proxy
+ | GET /api/models (after the first subscribed) ------------>
+ | <-- 200 { items: [{ id, name, efforts, defaultEffort? }] }  (ModelListResultV1)
+ | <-- 503 (cold cache): wait 2 s, read one more time
+ | picker opens after a failed read, or with an empty list: read again
+ | POST .../messages { text, newTask, model, effort? } ---------------->
+```
+
+- The model chip in the composer shows a short model name and, on a
+  second line, the effort, for example "GPT-5" and "High", or only
+  "Auto". The short name is the text after "Provider: ". When that text
+  is longer than 12 characters, the chip shows only its last two words
+  ("Anthropic: Claude Opus 5.5" shows as "Opus 5.5"). The picker list
+  and the TalkBack label have the full name. TalkBack reads "Model <name>, effort <effort>" and a hint.
+- The chip opens the picker (a modal with a title): a search field (it
+  filters by name or id), the radio group "Model" (Auto and the list, in a
+  `FlatList`, because the list can have about 400 models) and the radio
+  group "Reasoning effort". The effort group shows only when the model has
+  efforts, and only the efforts of that model, highest first. Its Auto
+  row shows the default of the model, for example "Auto (High)". "none"
+  shows as "Off". Done, the back button or a tap on the dimmed area
+  closes the picker.
+- When the read fails, the picker shows "The model list did not load."
+  with Try again.
+- A model change keeps the effort in use only when the new model has it,
+  else the effort goes back to Auto. A saved effort that is not in use
+  (because the saved model is not in the list) does not come back. A choice of Auto for the model also sets
+  the effort to Auto.
+- The choice is kept in the settings (sqlite cache key `settings`) and
+  stays after sign-out.
+- A saved model that is not in the list shows as Auto, and the app sends
+  no model and no effort. A saved effort that the model does not have is
+  not sent. Until the list loads, the chip shows Auto.
+- The app sends `model` and `effort` only in a message with no `taskId`.
+  A reply to a task never has them, and the chip is off while you reply.
+  When conversation-hub makes a message without a `taskId` an answer or
+  a steer, it ignores them.
+- The picker closes when the app locks, the same as the side menu.
+- The task screen shows "Model: <id>" (or "Model: Auto") and
+  "Effort: <effort>" when the task has an effort.
 
 ## Task detail and plans
 
