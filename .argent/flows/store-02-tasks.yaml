@@ -1,8 +1,6 @@
 steps:
-  - launch: com.famashines.ai
-  - echo: Start each scene logged out. goldie keeps the app between scenes, and a logged-in cold start shows the app lock (the emulator has PIN 1111). The path is the release APK of the main clone (docs/release.md, Phone screenshots).
-  - tool: reinstall-app
-    args: { bundleId: com.famashines.ai, appPath: /home/yahya/Documents/famashines/products/ai-systems/apps/ai-systems-app/android/app/build/outputs/apk/release/app-release.apk }
+  - echo: Start each scene logged out. goldie keeps the app between scenes, and a logged-in cold start shows the app lock. clear-app.mjs runs adb shell pm clear on the Pixel_10_Pro_Store emulator only.
+  - script: { path: clear-app.mjs }
   - launch: com.famashines.ai
   - await: { visible: { text: Sign in with your famashines account. } }
   - echo: The Sign in button. The title above it has the same text, so the tap uses the button centre from describe.

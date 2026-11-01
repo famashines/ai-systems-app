@@ -1,8 +1,6 @@
 steps:
-  - launch: com.famashines.ai
-  - echo: Start each scene logged out. goldie keeps the app between scenes, and a logged-in cold start shows the app lock (the emulator has PIN 1111). The path is the release APK of the main clone (docs/release.md, Phone screenshots).
-  - tool: reinstall-app
-    args: { bundleId: com.famashines.ai, appPath: /home/yahya/Documents/famashines/products/ai-systems/apps/ai-systems-app/android/app/build/outputs/apk/release/app-release.apk }
+  - echo: Start each scene logged out. goldie keeps the app between scenes, and a logged-in cold start shows the app lock. clear-app.mjs runs adb shell pm clear on the Pixel_10_Pro_Store emulator only.
+  - script: { path: clear-app.mjs }
   - launch: com.famashines.ai
   - await: { visible: { text: Sign in with your famashines account. } }
   - echo: The Sign in button. The title above it has the same text, so the tap uses the button centre from describe.
@@ -26,7 +24,7 @@ steps:
   - echo: Each capture adds this task to the Tasks list. Change the text when you capture again, so the list does not repeat one task.
   - tap: { id: chat-input }
   - tool: keyboard
-    args: { text: "Suggest three names for a weekly team newsletter" }
+    args: { text: "Draft a short thank-you note to a client" }
   - echo: Let the typed text arrive before the Done key, or the end of the text is lost.
   - wait: 1200
   - echo: Hide the keyboard with its Done key first. The keyboard covers the chat input and the Send button. Back is not safe, because it leaves the app when the keyboard is already hidden.
