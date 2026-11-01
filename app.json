@@ -1,11 +1,13 @@
 {
   "expo": {
-    "name": "AI Systems",
+    "name": "ai.famashines",
     "slug": "ai-systems",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "com.famashines.ai",
     "userInterfaceStyle": "automatic",
+    "primaryColor": "#2F5BB7",
     "platforms": [
       "android"
     ],
@@ -18,7 +20,13 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
-      ]
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#2F5BB7",
+        "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
+        "backgroundImage": "./assets/images/adaptive-icon-background.png",
+        "monochromeImage": "./assets/images/adaptive-icon-monochrome.png"
+      }
     },
     "plugins": [
       "expo-router",
@@ -36,8 +44,11 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#F8F9FB",
+          "image": "./assets/images/splash-icon-light.png",
+          "imageWidth": 288,
           "dark": {
-            "backgroundColor": "#111318"
+            "backgroundColor": "#111318",
+            "image": "./assets/images/splash-icon-dark.png"
           }
         }
       ],
@@ -57,6 +68,12 @@
     },
     "runtimeVersion": {
       "policy": "appVersion"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "93c54469-d828-422d-8ec2-5c053aa18404"
+      }
+    },
+    "owner": "m-yahya"
   }
 }

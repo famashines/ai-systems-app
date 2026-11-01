@@ -1,7 +1,7 @@
 {
   "name": "ai-systems-app",
   "main": "expo-router/entry",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -9,6 +9,9 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
+    "aab": "npx --yes eas-cli@23.0.0 build --local --platform android --profile production --non-interactive --output ./ai-systems-$npm_package_version.aab",
+    "submit:play": "node --env-file=.env scripts/publish-google-play.js ./ai-systems-$npm_package_version.aab",
+    "release:android": "npm run aab && npm run submit:play",
     "lint": "expo lint && node scripts/no-comments.js",
     "typecheck": "tsc --noEmit",
     "contrast": "jest src/theme.test.ts",
@@ -41,6 +44,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@googleapis/androidpublisher": "^42.0.0",
     "@testing-library/react-native": "^14.1.0",
     "@types/jest": "30.0.0",
     "@types/react": "~19.3.0",
