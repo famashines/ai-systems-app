@@ -8,6 +8,7 @@ import {
   EditPlanCommandPayloadV1,
   Id,
   MessageIntent,
+  ModelListResultV1,
   PauseRunCommandPayloadV1,
   PostOwnerMessageCommandPayloadV1,
   ProblemJson,
@@ -22,6 +23,8 @@ import {
   TaskListResultV1,
   TaskOutputV1,
   WsLimits,
+  type ModelListItemV1,
+  type ReasoningEffort,
   type Timestamp,
 } from '@famashines/ai-systems-contracts';
 import { z } from 'zod';
@@ -33,6 +36,7 @@ export const fetchTimeoutMs = 15_000;
 export const pageSize = 50;
 export const sendAttempts = 4;
 export const taskTextMax = 20_000;
+export const modelsRetryMs = 2_000;
 
 export type ApiErrorKind = 'network' | 'unauthorized' | 'rateLimited' | 'unavailable' | 'rejected';
 
@@ -68,6 +72,8 @@ export const controls = {
 };
 export type ControlName = keyof typeof controls;
 export type ControlBody<N extends ControlName> = Omit<z.input<(typeof controls)[N]>, 'taskId'>;
+
+export type Choice = { model?: string; effort?: ReasoningEffort };
 
 export type Page = { before?: Timestamp; beforeId?: Id };
 type Wait = (kind: 'rateLimited' | 'unavailable') => void;
@@ -145,11 +151,11 @@ async function withRetry<T>(once: () => Promise<T>, onWait: Wait): Promise<T> {
   }
 }
 
-export async function postMessage(conversationId: string, text: string, newTask: boolean, key: string, onWait: Wait = () => {}, taskId?: string): Promise<Posted> {
-  const payload = PostOwnerMessageCommandPayloadV1.safeParse({ conversationId, text, newTask, ...(taskId ? { taskId } : {}) });
+export async function postMessage(conversationId: string, text: string, newTask: boolean, key: string, onWait: Wait = () => {}, taskId?: string, choice: Choice = {}): Promise<Posted> {
+  const payload = PostOwnerMessageCommandPayloadV1.safeParse({ conversationId, text, newTask, ...(taskId ? { taskId } : choice) });
   if (!payload.success) throw new ApiError('rejected');
-  const { text: body, newTask: fresh, taskId: target } = payload.data;
-  return withRetry(() => post(`/api/conversations/${payload.data.conversationId}/messages`, { text: body, newTask: fresh, ...(target ? { taskId: target } : {}) }, key, PostedAnswer), onWait);
+  const { conversationId: _id, ...body } = payload.data;
+  return withRetry(() => post(`/api/conversations/${payload.data.conversationId}/messages`, body, key, PostedAnswer), onWait);
 }
 
 export async function control<N extends ControlName>(taskId: string, name: N, body: ControlBody<N>, key: string, onWait: Wait = () => {}): Promise<number> {
@@ -177,6 +183,17 @@ export async function getOutput(taskId: string, subtaskId?: string): Promise<str
 
 export function listAgents(): Promise<AgentListResultV1> {
   return request('/api/agents', { method: 'GET' }, AgentListResultV1);
+}
+
+export async function listModels(waitMs = modelsRetryMs): Promise<ModelListItemV1[]> {
+  const once = async () => (await request('/api/models', { method: 'GET' }, ModelListResultV1)).items;
+  try {
+    return await once();
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.kind !== 'unavailable') throw error;
+    await sleep(waitMs);
+    return once();
+  }
 }
 
 function pageQuery(page: Page): URLSearchParams {

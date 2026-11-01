@@ -206,7 +206,9 @@ function Detail({ detail, editing, setEditing }: { detail: TaskDetailV1; editing
   const outputs = useOutputs(detail);
   const subtasks = detail.plan?.subtasks ?? [];
   const titles = new Map(subtasks.map((subtask) => [subtask.subtaskId, subtask.title]));
-  const facts = [t(detail.mode === 'auto' ? 'task.modeAuto' : 'task.modeApproval'), t('task.cost', { cost: formatUsd(language, detail.costMicroUsd) })];
+  const facts = [t(detail.mode === 'auto' ? 'task.modeAuto' : 'task.modeApproval'), t('task.model', { model: detail.model ?? t('chat.modelAuto') })];
+  if (detail.effort) facts.push(t('task.effort', { effort: t(`effort.${detail.effort}`) }));
+  facts.push(t('task.cost', { cost: formatUsd(language, detail.costMicroUsd) }));
   return (
     <ScrollView testID="task-detail" contentContainerStyle={styles.scroll}>
       <View accessible accessibilityLabel={t('task.statusLabel', { status: statusLabel(t, detail.status, false), facts: facts.join('. ') })} style={styles.block}>

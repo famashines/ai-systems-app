@@ -1,4 +1,4 @@
-import { ApiError, control, getBudget, getOutput, getTask, getThread, listAgents, listTasks, postMessage, setBudget } from '@/lib/api';
+import { ApiError, control, getBudget, getOutput, getTask, getThread, listAgents, listModels, listTasks, postMessage, setBudget } from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { detail, fakeServer, ids, json, subtaskIds, task } from '@/test-fakes';
 
@@ -248,4 +248,43 @@ it('sends the taskId of a reply, and never together with newTask', async () => {
   expect(server.requests[0]!.body).toEqual({ text: 'Yes, in English.', newTask: false, taskId: ids.taskA });
   await expect(postMessage(conversationId, 'Hi', true, commandId, () => {}, ids.taskA)).rejects.toMatchObject({ kind: 'rejected' });
   expect(server.requests).toHaveLength(1);
+});
+
+it('sends the model and effort of a new message, never with a reply taskId, and never an effort with no model', async () => {
+  server.on(route, accepted(), accepted());
+  await postMessage(conversationId, 'Plan', true, commandId, () => {}, undefined, { model: 'openai/gpt-5', effort: 'high' });
+  await postMessage(conversationId, 'Plan', false, commandId, () => {}, undefined, { model: 'openai/gpt-4.1-nano' });
+  expect(server.requests.map((request) => request.body)).toEqual([
+    { text: 'Plan', newTask: true, model: 'openai/gpt-5', effort: 'high' },
+    { text: 'Plan', newTask: false, model: 'openai/gpt-4.1-nano' },
+  ]);
+  await expect(postMessage(conversationId, 'Plan', false, commandId, () => {}, undefined, { effort: 'high' })).rejects.toMatchObject({ kind: 'rejected' });
+  await expect(postMessage(conversationId, 'Plan', false, commandId, () => {}, undefined, { model: 'not a model' })).rejects.toMatchObject({ kind: 'rejected' });
+  expect(server.requests).toHaveLength(2);
+});
+
+describe('model list', () => {
+  const models = { items: [{ id: 'openai/gpt-5', name: 'OpenAI: GPT-5', efforts: ['high', 'medium', 'low', 'minimal'], defaultEffort: 'medium' }] };
+  const down = () => problem(503, 'unavailable');
+
+  it('reads the list with the bearer token', async () => {
+    server.on('GET /api/models', json(200, models));
+    expect(await listModels(0)).toEqual(models.items);
+    expect(server.requests[0]!.headers.get('Authorization')).toBe('Bearer access-1');
+  });
+
+  it('tries one more time after a 503 or a bad answer, then gives unavailable', async () => {
+    server.on('GET /api/models', down(), json(200, models));
+    expect(await listModels(0)).toEqual(models.items);
+    server.on('GET /api/models', down(), json(200, { items: [{ id: 'bad' }] }));
+    await expect(listModels(0)).rejects.toMatchObject({ kind: 'unavailable' });
+    expect(server.requests).toHaveLength(4);
+  });
+
+  it('does not try again after a network error or a refused request', async () => {
+    server.on('GET /api/models', new TypeError('Network request failed'), problem(403, 'forbidden'));
+    await expect(listModels(0)).rejects.toMatchObject({ kind: 'network' });
+    await expect(listModels(0)).rejects.toMatchObject({ kind: 'rejected', status: 403 });
+    expect(server.requests).toHaveLength(2);
+  });
 });
