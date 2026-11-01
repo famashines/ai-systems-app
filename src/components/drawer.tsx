@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Icon, IconButton, type IconName } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { useLive } from '@/state/live';
+import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { drawerWidth, motion, radius, spacing, touchTarget } from '@/theme';
 
@@ -22,8 +23,10 @@ const recentMax = 10;
 
 export function Menu({ current }: { current: Section }) {
   const { t, colors } = useSettings();
-  const { tasks } = useLive();
+  const { tasks, online, snapshot } = useLive();
+  const { locked } = useSession();
   const [open, setOpen] = useState(false);
+  if (open && locked) setOpen(false);
   const [progress] = useState(() => new Animated.Value(0));
   const side = I18nManager.isRTL ? 1 : -1;
 
@@ -42,7 +45,7 @@ export function Menu({ current }: { current: Section }) {
   return (
     <>
       <IconButton testID="menu" icon={{ ios: 'line.3.horizontal', android: 'menu', web: 'menu' }} label={t('drawer.open')} onPress={show} />
-      <Modal testID="drawer" visible={open} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
+      <Modal testID="drawer" visible={open && !locked} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim, opacity: progress }]} />
         <Pressable testID="drawer-scrim" accessibilityRole="button" accessibilityLabel={t('drawer.close')} onPress={close} style={StyleSheet.absoluteFill} />
         <Animated.View
@@ -84,9 +87,11 @@ export function Menu({ current }: { current: Section }) {
                 {t('drawer.recent')}
               </AppText>
               {tasks.length === 0 ? (
-                <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.heading}>
-                  {t('tasks.empty')}
-                </AppText>
+                online && snapshot === 'idle' ? (
+                  <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.heading}>
+                    {t('tasks.empty')}
+                  </AppText>
+                ) : null
               ) : (
                 tasks.slice(0, recentMax).map((task) => {
                   const status = t(`taskStatus.${task.status}`);

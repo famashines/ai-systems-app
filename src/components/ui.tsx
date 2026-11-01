@@ -1,7 +1,7 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import type { ReactNode } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSettings } from '@/state/settings';
 import { radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
@@ -49,12 +49,13 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
 
 export function Screen({ title, start, end, children }: { title: string; start?: ReactNode; end?: ReactNode; children: ReactNode }) {
   const { colors } = useSettings();
+  const { bottom } = useSafeAreaInsets();
   return (
-    <KeyboardAvoidingView behavior="padding" style={[styles.fill, { backgroundColor: colors.surface }]}>
+    <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={-bottom} style={[styles.fill, { backgroundColor: colors.surface }]}>
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.fill}>
         <View style={styles.header}>
           <View style={styles.slot}>{start}</View>
-          <AppText variant="title" accessibilityRole="header" numberOfLines={1} style={styles.title}>
+          <AppText variant="title" accessibilityRole="header" numberOfLines={2} style={styles.title}>
             {title}
           </AppText>
           <View style={styles.slot}>{end}</View>
@@ -133,7 +134,7 @@ export function StateView(props: StateProps) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: spacing.xs },
+  header: { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
   slot: { width: touchTarget, alignItems: 'center' },
   title: { flex: 1, textAlign: 'center' },
   body: { flex: 1, width: '100%', maxWidth: readingWidth, alignSelf: 'center', paddingHorizontal: spacing.md, gap: spacing.md },

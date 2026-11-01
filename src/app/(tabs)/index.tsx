@@ -228,7 +228,7 @@ export default function Chat() {
             {t('chat.newTaskOn')}
           </AppText>
         ) : null}
-        <View style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.outlineVariant }]}>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.outline }]}>
           <TextInput
             ref={input}
             testID="chat-input"
@@ -242,7 +242,6 @@ export default function Chat() {
             accessibilityState={{ disabled: !online }}
             placeholder={t('chat.placeholder')}
             placeholderTextColor={colors.onSurfaceVariant}
-            onSubmitEditing={submit}
             style={[styles.input, type.body, { color: colors.onSurface }]}
           />
           <View style={styles.row}>
