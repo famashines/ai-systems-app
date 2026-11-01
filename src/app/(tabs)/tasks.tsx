@@ -1,29 +1,33 @@
 import type { TaskListItemV1 } from '@famashines/ai-systems-contracts';
-import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet } from 'react-native';
 
 import { LiveBar } from '@/components/live-bar';
 import { AppText, Screen, StateView } from '@/components/ui';
 import { formatTime } from '@/i18n';
 import { useLive } from '@/state/live';
 import { useSettings } from '@/state/settings';
-import { radius, spacing } from '@/theme';
+import { radius, spacing, touchTarget } from '@/theme';
 
 function Row({ task }: { task: TaskListItemV1 }) {
   const { t, colors, language } = useSettings();
   const status = t(`taskStatus.${task.status}`);
   const time = formatTime(language, task.createdAt);
   return (
-    <View
+    <Pressable
       testID={`task-${task.taskId}`}
-      accessible
+      accessibilityRole="button"
       accessibilityLabel={t('tasks.item', { title: task.title, status, time })}
+      accessibilityHint={t('tasks.open')}
+      onPress={() => router.push({ pathname: '/task/[id]', params: { id: task.taskId } })}
+      android_ripple={{ color: colors.outlineVariant }}
       style={[styles.task, { backgroundColor: colors.surfaceContainer }]}
     >
       <AppText>{task.title}</AppText>
       <AppText variant="bodySmall" color="onSurfaceVariant">
         {t('tasks.meta', { status, time })}
       </AppText>
-    </View>
+    </Pressable>
   );
 }
 
@@ -80,6 +84,6 @@ export default function Tasks() {
 
 const styles = StyleSheet.create({
   list: { gap: spacing.sm, paddingBottom: spacing.md },
-  task: { gap: spacing.xs, padding: spacing.md, borderRadius: radius.lg },
+  task: { gap: spacing.xs, padding: spacing.md, borderRadius: radius.lg, minHeight: touchTarget },
   footer: { padding: spacing.md },
 });
