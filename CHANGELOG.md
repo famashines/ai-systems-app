@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Changed (calm chat look and side menu)
+
+- New warm colours: a cream background in the light theme, a warm dark
+  gray in the dark theme, and one terracotta accent for the main actions.
+  All text pairs keep WCAG AA contrast (`npm run contrast`).
+- The bottom tab bar is gone. A header with a menu button opens a side
+  menu with Chat, Tasks, Budget, Settings and the recent tasks. In Urdu
+  the menu comes from the right.
+- Chat: agent replies show as plain text with no bubble, your messages
+  show in a soft bubble at the end side. The composer is a rounded card
+  with a multiline field, the New task switch and a round send button. A
+  header action turns on New task.
+- Quiet secondary buttons (outlined), cards with thin borders, list rows
+  with thin dividers, and smaller muted metadata on all screens.
+
 ### Added (tasks, plans and owner controls, M3-08)
 
 - The task screen (`/task/<taskId>`, from the task list and the chat):

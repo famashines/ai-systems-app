@@ -1,9 +1,9 @@
 import { screen } from '@testing-library/react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Slot } from 'expo-router';
 import { renderRouter } from 'expo-router/testing-library';
 import { Text } from 'react-native';
 
+import SectionsLayout from '@/app/(tabs)/_layout';
 import RootLayout from '@/app/_layout';
 import Login from '@/app/login';
 import * as auth from '@/lib/auth';
@@ -21,8 +21,11 @@ jest.mock('@/lib/auth', () => ({
 
 const routes = {
   _layout: RootLayout,
-  '(tabs)/_layout': () => <Slot />,
+  '(tabs)/_layout': SectionsLayout,
   '(tabs)/index': () => <Text>chat content</Text>,
+  '(tabs)/tasks': () => <Text>tasks content</Text>,
+  '(tabs)/budget': () => <Text>budget content</Text>,
+  '(tabs)/settings': () => <Text>settings content</Text>,
   login: () => <Text>login content</Text>,
 };
 
@@ -70,4 +73,11 @@ it('keeps "Your session ended" on the login screen when the live connection lose
   await renderRouter({ ...routes, login: Login }, { initialUrl: '/' });
   expect(await screen.findByRole('alert')).toHaveTextContent('Your session ended. Sign in again.');
   expect(auth.signOut).toHaveBeenCalledTimes(1);
+});
+
+it('shows each section route with no tab bar', async () => {
+  jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+  await open(true, '/budget');
+  expect(await screen.findByText('budget content')).toBeOnTheScreen();
+  expect(screen.queryByRole('tab')).toBeNull();
 });

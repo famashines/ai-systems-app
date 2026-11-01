@@ -207,7 +207,7 @@ export function PlanSummary({ subtasks }: { subtasks: PlanSubtask[] }) {
 export function Confirm({ label, confirmLabel, onConfirm, busy, disabled }: { label: string; confirmLabel: string; onConfirm: () => void; busy: boolean; disabled: boolean }) {
   const { t } = useSettings();
   const [asking, setAsking] = useState(false);
-  if (!asking) return <Button label={label} variant="tonal" busy={busy} disabled={disabled} onPress={() => setAsking(true)} />;
+  if (!asking) return <Button label={label} variant="outline" busy={busy} disabled={disabled} onPress={() => setAsking(true)} />;
   return (
     <View style={styles.row}>
       <Button
@@ -218,7 +218,7 @@ export function Confirm({ label, confirmLabel, onConfirm, busy, disabled }: { la
           onConfirm();
         }}
       />
-      <Button label={t('control.keep')} variant="tonal" onPress={() => setAsking(false)} />
+      <Button label={t('control.keep')} variant="outline" onPress={() => setAsking(false)} />
     </View>
   );
 }
@@ -234,8 +234,8 @@ export function PlanActions({ detail, onEdit }: { detail: TaskDetailV1; onEdit: 
     <View style={styles.list}>
       <View style={styles.row}>
         <Button label={t('plan.approve')} busy={busy === 'approve-plan'} disabled={!online || busy !== null} onPress={() => void run('approve-plan', { planVersion })} />
-        <Button label={t('plan.edit')} variant="tonal" disabled={!online || busy !== null} onPress={onEdit} />
-        <Button label={t('plan.reject')} variant="tonal" disabled={!online || busy !== null} onPress={() => setRejecting((on) => !on)} />
+        <Button label={t('plan.edit')} variant="outline" disabled={!online || busy !== null} onPress={onEdit} />
+        <Button label={t('plan.reject')} variant="outline" disabled={!online || busy !== null} onPress={() => setRejecting((on) => !on)} />
       </View>
       {rejecting ? (
         <View style={styles.list}>
@@ -278,7 +278,7 @@ export function PlanEditor({ detail, onClose }: { detail: TaskDetailV1; onClose:
               setBase(plan.planVersion);
             }}
           />
-          <Button label={t('plan.cancelEdit')} variant="tonal" onPress={onClose} />
+          <Button label={t('plan.cancelEdit')} variant="outline" onPress={onClose} />
         </View>
       </View>
     );
@@ -334,14 +334,14 @@ export function PlanEditor({ detail, onClose }: { detail: TaskDetailV1; onClose:
             </View>
             <Choice role="switch" label={t('plan.needsApprovalSwitch')} selected={item.needsApproval} onPress={() => change(changeSubtask(draft, item.subtaskId, { needsApproval: !item.needsApproval }))} />
             <View style={styles.row}>
-              <Button label={t('plan.up', { title: name })} variant="tonal" disabled={index === 0} onPress={() => change(moveSubtask(draft, item.subtaskId, -1))} />
-              <Button label={t('plan.down', { title: name })} variant="tonal" disabled={index === draft.length - 1} onPress={() => change(moveSubtask(draft, item.subtaskId, 1))} />
-              <Button label={t('plan.remove', { title: name })} variant="tonal" disabled={draft.length === 1} onPress={() => change(removeSubtask(draft, item.subtaskId))} />
+              <Button label={t('plan.up', { title: name })} variant="outline" disabled={index === 0} onPress={() => change(moveSubtask(draft, item.subtaskId, -1))} />
+              <Button label={t('plan.down', { title: name })} variant="outline" disabled={index === draft.length - 1} onPress={() => change(moveSubtask(draft, item.subtaskId, 1))} />
+              <Button label={t('plan.remove', { title: name })} variant="outline" disabled={draft.length === 1} onPress={() => change(removeSubtask(draft, item.subtaskId))} />
             </View>
           </View>
         );
       })}
-      <Button label={t('plan.add')} variant="tonal" disabled={!firstAgent || draft.length >= 20} onPress={() => firstAgent && change(addSubtask(draft, Crypto.randomUUID(), firstAgent))} />
+      <Button label={t('plan.add')} variant="outline" disabled={!firstAgent || draft.length >= 20} onPress={() => firstAgent && change(addSubtask(draft, Crypto.randomUUID(), firstAgent))} />
       {problem ? (
         <AppText variant="bodySmall" color="error" accessibilityRole="alert" accessibilityLiveRegion="polite">
           {t(problemKeys[problem])}
@@ -350,7 +350,7 @@ export function PlanEditor({ detail, onClose }: { detail: TaskDetailV1; onClose:
       <OutcomeText outcome={outcome} />
       <View style={styles.row}>
         <Button label={t('plan.save')} busy={busy === 'edit-plan'} disabled={!online || busy !== null} onPress={() => void save()} />
-        <Button label={t('plan.cancelEdit')} variant="tonal" onPress={onClose} />
+        <Button label={t('plan.cancelEdit')} variant="outline" onPress={onClose} />
       </View>
     </View>
   );
@@ -359,10 +359,10 @@ export function PlanEditor({ detail, onClose }: { detail: TaskDetailV1; onClose:
 const styles = StyleSheet.create({
   chip: { flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.full },
   field: { gap: spacing.xs },
-  input: { minHeight: touchTarget, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, textAlign: 'auto' },
-  choice: { minHeight: touchTarget, minWidth: touchTarget, justifyContent: 'center', paddingHorizontal: spacing.md, borderWidth: 1, borderRadius: radius.full },
+  input: { minHeight: touchTarget, borderWidth: 1, borderRadius: radius.md, borderCurve: 'continuous', paddingHorizontal: spacing.md, textAlign: 'auto' },
+  choice: { minHeight: touchTarget, minWidth: touchTarget, justifyContent: 'center', paddingHorizontal: spacing.md, borderWidth: 1, borderRadius: radius.full, overflow: 'hidden' },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   list: { gap: spacing.sm },
-  item: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.md },
+  item: { gap: spacing.xs, paddingVertical: spacing.xs },
 });

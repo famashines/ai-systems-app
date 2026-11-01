@@ -1,11 +1,12 @@
 import type { TaskDetailV1 } from '@famashines/ai-systems-contracts';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { Menu } from '@/components/drawer';
 import { LiveBar } from '@/components/live-bar';
 import { PlanActions, PlanSummary } from '@/components/task';
-import { AppText, Button, Screen, StateView } from '@/components/ui';
+import { AppText, Button, Card, Icon, IconButton, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { taskTextMax } from '@/lib/api';
 import type { ChatMessage } from '@/lib/chat';
@@ -13,7 +14,7 @@ import { formatUsd } from '@/lib/money';
 import { canReply, endedStatuses } from '@/lib/task';
 import { useLive, type Message, type StreamRow } from '@/state/live';
 import { useSettings } from '@/state/settings';
-import { radius, spacing, touchTarget, type } from '@/theme';
+import { radius, shadow, spacing, touchTarget, type } from '@/theme';
 
 type Row = { kind: 'pending'; message: Message } | { kind: 'plan'; detail: TaskDetailV1 } | { kind: 'stream'; stream: StreamRow } | { kind: 'message'; message: ChatMessage };
 type Reply = (taskId: string) => void;
@@ -21,18 +22,20 @@ type Reply = (taskId: string) => void;
 const openTask = (taskId: string, edit = false) => router.push({ pathname: '/task/[id]', params: edit ? { id: taskId, edit: '1' } : { id: taskId } });
 
 function PlanCard({ detail }: { detail: TaskDetailV1 }) {
-  const { t, colors } = useSettings();
+  const { t } = useSettings();
   const plan = detail.plan;
   if (!plan) return null;
   return (
-    <View testID={`plan-${detail.taskId}`} style={[styles.message, styles.plan, { backgroundColor: colors.surfaceContainer }]}>
+    <Card testID={`plan-${detail.taskId}`}>
       <AppText variant="label" accessibilityRole="header">
         {t('plan.preview', { title: detail.title, version: String(plan.planVersion) })}
       </AppText>
       <PlanSummary subtasks={plan.subtasks} />
       <PlanActions detail={detail} onEdit={() => openTask(detail.taskId, true)} />
-      <Button label={t('chat.openTask')} variant="tonal" onPress={() => openTask(detail.taskId)} />
-    </View>
+      <View style={styles.actions}>
+        <Button label={t('chat.openTask')} variant="outline" onPress={() => openTask(detail.taskId)} />
+      </View>
+    </Card>
   );
 }
 
@@ -49,22 +52,22 @@ function Pending({ message }: { message: Message }) {
   const status = t(statusKey(message));
   const bad = message.state === 'failed' || message.state === 'rejected';
   return (
-    <View style={[styles.message, styles.owner, { backgroundColor: colors.primaryContainer }]}>
-      <View accessible accessibilityLiveRegion="polite" accessibilityLabel={t('chat.message', { text: message.text, status })}>
-        <AppText color="onPrimaryContainer">{message.text}</AppText>
-        <AppText variant="bodySmall" color={bad ? 'error' : 'onPrimaryContainer'}>
+    <View style={[styles.owner, { backgroundColor: colors.surfaceContainerHigh }]}>
+      <View accessible accessibilityLiveRegion="polite" accessibilityLabel={t('chat.message', { text: message.text, status })} style={styles.body}>
+        <AppText>{message.text}</AppText>
+        <AppText variant="bodySmall" color={bad ? 'error' : 'onSurfaceVariant'}>
           {status}
         </AppText>
       </View>
-      {message.state === 'failed' ? <Button label={t('chat.retry')} variant="tonal" disabled={!online} onPress={() => retry(message.key)} /> : null}
+      {message.state === 'failed' ? <Button label={t('chat.retry')} variant="outline" disabled={!online} onPress={() => retry(message.key)} /> : null}
     </View>
   );
 }
 
 function Stream({ stream }: { stream: StreamRow }) {
-  const { t, colors } = useSettings();
+  const { t } = useSettings();
   return (
-    <View testID={`stream-${stream.taskId}`} accessible accessibilityLabel={t('chat.stream', { text: stream.text })} style={[styles.message, { backgroundColor: colors.surfaceContainer }]}>
+    <View testID={`stream-${stream.taskId}`} accessible accessibilityLabel={t('chat.stream', { text: stream.text })} style={styles.agent}>
       <AppText>{stream.text}</AppText>
       <AppText variant="bodySmall" color="onSurfaceVariant">
         {t('chat.writing')}
@@ -79,9 +82,9 @@ function Posted({ message, onReply }: { message: ChatMessage; onReply: Reply }) 
   if (message.role === 'owner') {
     const status = t('chat.received');
     return (
-      <View accessible accessibilityLabel={t('chat.message', { text: message.text, status })} style={[styles.message, styles.owner, { backgroundColor: colors.primaryContainer }]}>
-        <AppText color="onPrimaryContainer">{message.text}</AppText>
-        <AppText variant="bodySmall" color="onPrimaryContainer">
+      <View accessible accessibilityLabel={t('chat.message', { text: message.text, status })} style={[styles.owner, styles.body, { backgroundColor: colors.surfaceContainerHigh }]}>
+        <AppText>{message.text}</AppText>
+        <AppText variant="bodySmall" color="onSurfaceVariant">
           {status}
         </AppText>
       </View>
@@ -90,14 +93,14 @@ function Posted({ message, onReply }: { message: ChatMessage; onReply: Reply }) 
   const cost = message.costMicroUsd === undefined ? null : formatUsd(language, message.costMicroUsd);
   const status = tasks.find((item) => item.taskId === message.taskId)?.status ?? details[message.taskId]?.status;
   return (
-    <View testID={`reply-${message.messageId}`} style={[styles.message, { backgroundColor: colors.surfaceContainer }]}>
+    <View testID={`reply-${message.messageId}`} style={styles.agent}>
       <View
         accessible
         accessibilityLiveRegion="polite"
         accessibilityLabel={cost === null ? t('chat.reply', { text: message.text }) : t('chat.replyCost', { text: message.text, cost })}
         style={styles.body}
       >
-        <AppText>{message.text}</AppText>
+        <AppText selectable>{message.text}</AppText>
         {cost === null ? null : (
           <AppText variant="bodySmall" color="onSurfaceVariant">
             {t('chat.cost', { cost })}
@@ -106,8 +109,8 @@ function Posted({ message, onReply }: { message: ChatMessage; onReply: Reply }) 
       </View>
       {status === undefined || endedStatuses.has(status) ? null : (
         <View style={styles.actions}>
-          {canReply(status) ? <Button label={t('chat.replyTo')} variant="tonal" onPress={() => onReply(message.taskId)} /> : null}
-          <Button label={t('chat.openTask')} variant="tonal" onPress={() => openTask(message.taskId)} />
+          {canReply(status) ? <Button label={t('chat.replyTo')} variant="outline" onPress={() => onReply(message.taskId)} /> : null}
+          <Button label={t('chat.openTask')} variant="outline" onPress={() => openTask(message.taskId)} />
         </View>
       )}
     </View>
@@ -177,10 +180,12 @@ export default function Chat() {
   const [text, setText] = useState('');
   const [newTask, setNewTask] = useState(false);
   const [replyTo, setReplyTo] = useState<string | null>(null);
+  const input = useRef<ComponentRef<typeof TextInput>>(null);
   const replyTitle = replyTo ? (details[replyTo]?.title ?? tasks.find((item) => item.taskId === replyTo)?.title ?? t('task.title')) : null;
+  const canSend = online && text.trim() !== '';
 
   const submit = () => {
-    if (!online || !text.trim()) return;
+    if (!canSend) return;
     send(text, newTask, replyTo ?? undefined);
     setText('');
     setNewTask(false);
@@ -190,9 +195,18 @@ export default function Chat() {
     setReplyTo(taskId);
     setNewTask(false);
   };
+  const startNew = () => {
+    setReplyTo(null);
+    setNewTask(true);
+    input.current?.focus();
+  };
 
   return (
-    <Screen title={t('tabs.chat')}>
+    <Screen
+      title={t('tabs.chat')}
+      start={<Menu current="/" />}
+      end={<IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.startNewTask')} disabled={!online} onPress={startNew} />}
+    >
       <LiveBar />
       <Thread onReply={reply} />
       <View style={styles.composer}>
@@ -206,7 +220,7 @@ export default function Chat() {
             <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite" style={styles.shrink}>
               {t('chat.replyingTo', { title: replyTitle })}
             </AppText>
-            <Button label={t('chat.replyCancel')} variant="tonal" onPress={() => setReplyTo(null)} />
+            <Button label={t('chat.replyCancel')} variant="outline" onPress={() => setReplyTo(null)} />
           </View>
         ) : null}
         {newTask ? (
@@ -214,36 +228,41 @@ export default function Chat() {
             {t('chat.newTaskOn')}
           </AppText>
         ) : null}
-        <View style={styles.row}>
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityLabel={t('chat.newTask')}
-            accessibilityHint={t('chat.newTaskHint')}
-            accessibilityState={{ checked: newTask, disabled: !online || replyTo !== null }}
-            disabled={!online || replyTo !== null}
-            onPress={() => setNewTask((on) => !on)}
-            android_ripple={{ color: colors.outlineVariant }}
-            style={[styles.toggle, { borderColor: colors.outline, backgroundColor: newTask ? colors.primaryContainer : 'transparent', opacity: online && replyTo === null ? 1 : 0.38 }]}
-          >
-            <AppText variant="label" color={newTask ? 'onPrimaryContainer' : 'onSurface'}>
-              {t('chat.newTask')}
-            </AppText>
-          </Pressable>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.outline }]}>
           <TextInput
+            ref={input}
             testID="chat-input"
             value={text}
             onChangeText={setText}
             editable={online}
+            multiline
             maxLength={taskTextMax}
             accessibilityLabel={t('chat.inputLabel')}
             accessibilityHint={online ? undefined : t('chat.offline')}
             accessibilityState={{ disabled: !online }}
             placeholder={t('chat.placeholder')}
             placeholderTextColor={colors.onSurfaceVariant}
-            onSubmitEditing={submit}
-            style={[styles.input, type.body, { color: colors.onSurface, borderColor: colors.outline, backgroundColor: colors.surfaceContainer }]}
+            style={[styles.input, type.body, { color: colors.onSurface }]}
           />
-          <Button label={t('chat.send')} onPress={submit} disabled={!online || !text.trim()} />
+          <View style={styles.row}>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel={t('chat.newTask')}
+              accessibilityHint={t('chat.newTaskHint')}
+              accessibilityState={{ checked: newTask, disabled: !online || replyTo !== null }}
+              disabled={!online || replyTo !== null}
+              onPress={() => setNewTask((on) => !on)}
+              android_ripple={{ color: colors.outlineVariant }}
+              style={[styles.toggle, { backgroundColor: newTask ? colors.primaryContainer : 'transparent', opacity: online && replyTo === null ? 1 : 0.38 }]}
+            >
+              <Icon name={{ ios: 'plus', android: 'add', web: 'add' }} color={newTask ? 'onPrimaryContainer' : 'onSurfaceVariant'} size={20} />
+              <AppText variant="label" color={newTask ? 'onPrimaryContainer' : 'onSurfaceVariant'}>
+                {t('chat.newTask')}
+              </AppText>
+            </Pressable>
+            <View style={styles.fill} />
+            <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled disabled={!canSend} onPress={submit} />
+          </View>
         </View>
       </View>
     </Screen>
@@ -251,16 +270,17 @@ export default function Chat() {
 }
 
 const styles = StyleSheet.create({
-  list: { gap: spacing.sm, paddingBottom: spacing.sm },
-  message: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.lg, maxWidth: '88%', alignSelf: 'flex-start' },
-  owner: { alignSelf: 'flex-end' },
-  plan: { maxWidth: '100%', alignSelf: 'stretch' },
-  body: { gap: spacing.sm },
+  list: { gap: spacing.lg, paddingVertical: spacing.md },
+  owner: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.lg, borderCurve: 'continuous', maxWidth: '85%', alignSelf: 'flex-end' },
+  agent: { gap: spacing.sm, alignSelf: 'stretch' },
+  body: { gap: spacing.xs },
   shrink: { flexShrink: 1 },
+  fill: { flex: 1 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   older: { padding: spacing.md },
-  composer: { gap: spacing.sm, paddingBottom: spacing.md },
+  composer: { gap: spacing.sm, paddingBottom: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  toggle: { minHeight: touchTarget, minWidth: touchTarget, justifyContent: 'center', paddingHorizontal: spacing.md, borderWidth: 1, borderRadius: radius.full },
-  input: { flex: 1, minHeight: touchTarget, borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: spacing.md, textAlign: 'auto' },
+  card: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.xl, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },
+  toggle: { minHeight: touchTarget, minWidth: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.full, overflow: 'hidden' },
+  input: { minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.sm, paddingTop: spacing.sm, textAlign: 'auto', textAlignVertical: 'top' },
 });

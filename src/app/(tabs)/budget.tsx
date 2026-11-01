@@ -3,8 +3,9 @@ import * as Crypto from 'expo-crypto';
 import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
+import { Menu } from '@/components/drawer';
 import { LiveBar } from '@/components/live-bar';
-import { AppText, Button, Screen, StateView } from '@/components/ui';
+import { AppText, Button, Card, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
 import * as api from '@/lib/api';
 import { formatUsd, formatUsdExact, parseUsd, usdText } from '@/lib/money';
@@ -35,9 +36,9 @@ function Line({ label, micro, alert = false }: { label: string; micro: number | 
 }
 
 function Month({ month }: { month: BudgetMonthV1 }) {
-  const { t, colors } = useSettings();
+  const { t } = useSettings();
   return (
-    <View style={[styles.card, { backgroundColor: colors.surfaceContainer }]}>
+    <Card>
       <AppText variant="label" color="onSurfaceVariant" accessibilityRole="header">
         {t('budget.month', { month: month.month })}
       </AppText>
@@ -48,7 +49,7 @@ function Month({ month }: { month: BudgetMonthV1 }) {
       <Line label={t('budget.reserved')} micro={month.reservedMicroUsd} />
       <Line label={t('budget.remaining')} micro={month.remainingMicroUsd} />
       {month.overCapMicroUsd > 0 ? <Line label={t('budget.overCap')} micro={month.overCapMicroUsd} alert /> : null}
-    </View>
+    </Card>
   );
 }
 
@@ -142,7 +143,7 @@ export default function Budget() {
   const { t } = useSettings();
   const { budget, reloadBudget, online, status, reconnect } = useLive();
   return (
-    <Screen title={t('tabs.budget')}>
+    <Screen title={t('tabs.budget')} start={<Menu current="/budget" />}>
       <LiveBar />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {budget.loaded ? (
@@ -166,10 +167,9 @@ export default function Budget() {
 
 const styles = StyleSheet.create({
   content: { gap: spacing.lg, paddingBottom: spacing.xl },
-  card: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.lg },
   line: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  warning: { padding: spacing.md, borderRadius: radius.md },
+  warning: { padding: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   form: { gap: spacing.md },
   field: { gap: spacing.xs },
-  input: { minHeight: touchTarget, borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: spacing.md, textAlign: 'auto' },
+  input: { minHeight: touchTarget, borderWidth: 1, borderRadius: radius.md, borderCurve: 'continuous', paddingHorizontal: spacing.md, textAlign: 'auto' },
 });

@@ -16,7 +16,7 @@ export function LiveBar() {
       accessibilityLiveRegion="polite"
       style={[styles.bar, { backgroundColor: reconnecting ? colors.surfaceContainerHigh : colors.primaryContainer }]}
     >
-      <AppText variant="label" color={reconnecting ? 'onSurface' : 'onPrimaryContainer'}>
+      <AppText variant="bodySmall" color={reconnecting ? 'onSurfaceVariant' : 'onPrimaryContainer'}>
         {t(reconnecting ? 'live.reconnecting' : 'live.updated')}
       </AppText>
     </View>
@@ -24,5 +24,5 @@ export function LiveBar() {
 }
 
 const styles = StyleSheet.create({
-  bar: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md },
+  bar: { alignSelf: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full },
 });

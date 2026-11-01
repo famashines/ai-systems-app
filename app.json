@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "com.famashines.ai",
     "userInterfaceStyle": "automatic",
-    "primaryColor": "#2F5BB7",
+    "primaryColor": "#B5532F",
     "platforms": [
       "android"
     ],
@@ -44,11 +44,11 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F8F9FB",
+          "backgroundColor": "#FAF9F5",
           "image": "./assets/images/splash-icon-light.png",
           "imageWidth": 288,
           "dark": {
-            "backgroundColor": "#111318",
+            "backgroundColor": "#262624",
             "image": "./assets/images/splash-icon-dark.png"
           }
         }

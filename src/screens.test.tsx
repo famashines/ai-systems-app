@@ -18,6 +18,7 @@ import { LockScreen } from '@/components/lock-screen';
 import { Button, StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
+import { lockAfterMs } from '@/lib/lock';
 import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs, useLive } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
@@ -27,7 +28,7 @@ jest.mock('expo', () => ({ ...jest.requireActual<object>('expo'), reloadAppAsync
 
 const mockParams: { id?: string; edit?: string } = {};
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
+  router: { push: jest.fn(), navigate: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
 }));
 
@@ -520,6 +521,7 @@ describe('Live', () => {
       expect(screen.getByLabelText('Message')).toHaveProp('editable', false);
       expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Start a new task' })).toBeDisabled();
     });
 
     it('reads the thread after subscribed, keeps one conversation id, and reads older pages until an empty page', async () => {
@@ -618,6 +620,17 @@ describe('Live', () => {
       await act(async () => answer(posted()));
       expect(screen.getByText('Received')).toBeOnTheScreen();
       expect(screen.getAllByText('Plan the week')).toHaveLength(1);
+    });
+
+    it('turns on the new task switch from the header action', async () => {
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      await show(<Chat />);
+      await connect();
+      expect(screen.getByRole('switch', { name: 'New task' })).not.toBeChecked();
+      await fireEvent.press(screen.getByRole('button', { name: 'Start a new task' }));
+      expect(screen.getByRole('switch', { name: 'New task' })).toBeChecked();
+      expect(screen.getByText('The next message starts a new task.')).toBeOnTheScreen();
+      expect(screen.getByPlaceholderText('Reply to Fama AI')).toHaveProp('multiline', true);
     });
 
     it('sends newTask true once when the new task switch is on', async () => {
@@ -1315,6 +1328,125 @@ describe('Live', () => {
       await act(async () => socket.serverClose(1006));
       expect(screen.getByText('آف لائن۔ کنکشن واپس آنے پر آپ حد بدل سکتے ہیں۔')).toBeOnTheScreen();
       expect(I18nManager.forceRTL).toHaveBeenLastCalledWith(true);
+    });
+  });
+
+  describe('Drawer', () => {
+    beforeEach(() => {
+      jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+    });
+
+    it('opens from the menu with the current section selected, and closes from the scrim, the close button and the back button', async () => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(<Budget />);
+      await connect();
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      const menu = screen.getByRole('button', { name: 'Open the menu' });
+      expect(menu).toHaveStyle({ width: 48, height: 48 });
+      await fireEvent.press(menu);
+      expect(screen.getByRole('button', { name: 'Budget', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Chat', selected: false })).toBeOnTheScreen();
+      expect(screen.getByText('No tasks yet.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByTestId('drawer-scrim', { includeHiddenElements: true }));
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await fireEvent.press(menu);
+      await fireEvent.press(screen.getByRole('button', { name: 'Close the menu' }));
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await fireEvent.press(menu);
+      await fireEvent(screen.getByTestId('drawer'), 'requestClose');
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('goes to a section and closes', async () => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(<Tasks />);
+      await connect();
+      for (const [name, href] of [['Chat', '/'], ['Budget', '/budget'], ['Settings', '/settings']] as const) {
+        await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+        await fireEvent.press(screen.getByRole('button', { name }));
+        expect(router.navigate).toHaveBeenLastCalledWith(href);
+        expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      }
+    });
+
+    it('lists the recent tasks newest first with the status, and opens a task', async () => {
+      server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 1, 'Plan the week'), task(ids.taskB, 1, 'Older', '2026-10-30T10:00:00.000Z')], headSeq: 10 }));
+      await show(<Settings />);
+      await connect();
+      await waitFor(() => expect(tasksCalls()).toHaveLength(1));
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(await screen.findByRole('header', { name: 'Recent tasks' })).toBeOnTheScreen();
+      expect(screen.getAllByRole('button', { name: /\. Submitted$/ }).map((row) => row.props.accessibilityLabel)).toEqual(['Plan the week. Submitted', 'Older. Submitted']);
+      await fireEvent.press(screen.getByRole('button', { name: 'Plan the week. Submitted' }));
+      expect(router.push).toHaveBeenCalledWith({ pathname: '/task/[id]', params: { id: ids.taskA } });
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+    });
+
+    it('shows only the 10 newest tasks', async () => {
+      const page = Array.from({ length: 11 }, (_, i) => task(`${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`, 1, `Task ${i}`, new Date(Date.UTC(2026, 9, 31, 10, 0, 59 - i)).toISOString()));
+      server.on('GET /api/tasks', json(200, { items: page, headSeq: 10 }));
+      await show(<Settings />);
+      await connect();
+      await waitFor(() => expect(tasksCalls()).toHaveLength(1));
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      await waitFor(() => expect(screen.getAllByRole('button', { name: /^Task \d+\. Submitted$/ })).toHaveLength(10));
+      expect(screen.getAllByRole('button', { name: /^Task \d+\. Submitted$/ }).map((row) => row.props.accessibilityLabel)).toEqual(page.slice(0, 10).map((item) => `${item.title}. Submitted`));
+    });
+
+    it('shows no empty text while the tasks load or the device is offline', async () => {
+      server.on('GET /api/tasks', () => new Promise<Response>(() => {}));
+      await show(<Tasks />);
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(screen.getByRole('header', { name: 'Recent tasks' })).toBeOnTheScreen();
+      expect(screen.queryByText('No tasks yet.')).toBeNull();
+      await connect();
+      expect(screen.queryByText('No tasks yet.')).toBeNull();
+    });
+
+    it('hides the menu when the app locks, and keeps it closed after unlock', async () => {
+      jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
+      const handlers: ((state: AppStateStatus) => void)[] = [];
+      jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, handler) => {
+        handlers.push(handler);
+        return { remove: () => {} };
+      });
+      let now = Date.now();
+      jest.spyOn(Date, 'now').mockImplementation(() => now);
+      function Lock() {
+        return useSession().locked ? <LockScreen /> : null;
+      }
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(
+        <>
+          <Tasks />
+          <Lock />
+        </>,
+      );
+      await waitFor(() => expect(screen.queryByText('Fama AI is locked')).toBeNull());
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(screen.getByTestId('drawer-panel')).toBeOnTheScreen();
+      let unlock = (_result: { success: true }) => {};
+      jest.mocked(LocalAuthentication.authenticateAsync).mockReturnValueOnce(new Promise((resolve) => (unlock = resolve)));
+      await act(async () => handlers.at(-1)!('background'));
+      now += lockAfterMs;
+      await act(async () => handlers.at(-1)!('active'));
+      expect(await screen.findByText('Fama AI is locked')).toBeOnTheScreen();
+      expect(screen.queryByTestId('drawer-panel', { includeHiddenElements: true })).toBeNull();
+      await act(async () => unlock({ success: true }));
+      await waitFor(() => expect(screen.queryByText('Fama AI is locked')).toBeNull());
+      expect(screen.queryByTestId('drawer-panel', { includeHiddenElements: true })).toBeNull();
+    });
+
+    it.each([
+      [false, -304],
+      [true, 304],
+    ])('slides in from the start edge (right to left: %s)', async (rtl, offset) => {
+      jest.replaceProperty(I18nManager, 'isRTL', rtl);
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(<Tasks />);
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(screen.getByTestId('drawer-panel')).toHaveStyle({ start: 0, transform: [{ translateX: offset }] });
     });
   });
 });
