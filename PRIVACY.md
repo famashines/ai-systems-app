@@ -1,8 +1,8 @@
-# Privacy policy: ai.famashines
+# Privacy policy: Fama AI
 
 Last change: 2026-11-01.
 
-ai.famashines (package `com.famashines.ai`) is the Android app of the
+Fama AI (package `com.famashines.ai`) is the Android app of the
 famashines ai-systems service. You use it to send tasks to your own AI
 agents, follow the tasks, and see the cost. This policy tells you which
 data the app keeps on your device, which data it sends, and where the data

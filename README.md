@@ -1,6 +1,6 @@
 # ai-systems-app
 
-The Android app of ai-systems. Expo SDK 58, Expo Router, TypeScript
+Fama AI, the Android app of ai-systems. Expo SDK 58, Expo Router, TypeScript
 strict, managed workflow. The build setup is the same as `dev/taseen`
 (ADR 0012).
 
@@ -389,6 +389,15 @@ audience `ai-systems-app` and the role `owner`.
 internal testing track. The first release, the Play Console forms and the
 service account are in [docs/release.md](docs/release.md). The privacy
 policy is [PRIVACY.md](PRIVACY.md).
+
+## Logo and store graphics
+
+The app name is `Fama AI`. The mark, its rules and the asset table are in
+[logo-master/SPEC.md](logo-master/SPEC.md).
+`python3 scripts/build-logo-assets.py` (Python 3 with pycairo and Pillow)
+makes the app icons, the splash icons, the 512 px Play icon and the
+feature graphic, then checks them. A changed icon or splash needs a new
+native build.
 
 ## What the owner must do later
 
