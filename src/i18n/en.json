@@ -220,7 +220,6 @@
   "chat.model": "Model",
   "chat.modelAuto": "Auto",
   "chat.modelChip": "Model {model}, effort {effort}",
-  "chat.modelChipText": "{model} · {effort}",
   "chat.modelHint": "Opens the list of models and effort levels for the next new task.",
   "chat.modelTitle": "Model and effort",
   "chat.modelSearch": "Search models",

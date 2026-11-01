@@ -220,7 +220,6 @@
   "chat.model": "Modell",
   "chat.modelAuto": "Automatisch",
   "chat.modelChip": "Modell {model}, Denkaufwand {effort}",
-  "chat.modelChipText": "{model} · {effort}",
   "chat.modelHint": "Öffnet die Liste der Modelle und Denkstufen für die nächste neue Aufgabe.",
   "chat.modelTitle": "Modell und Denkaufwand",
   "chat.modelSearch": "Modelle suchen",

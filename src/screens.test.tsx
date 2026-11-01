@@ -907,7 +907,7 @@ describe('Live', () => {
       await fireEvent.press(screen.getByRole('radio', { name: 'Low' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
       expect(screen.queryByTestId('model-panel')).toBeNull();
-      expect(chip('Model OpenAI: GPT-5, effort Low')).toHaveTextContent('GPT-5 · Low');
+      expect(chip('Model OpenAI: GPT-5, effort Low')).toHaveTextContent('GPT-5Low');
       await fireEvent.press(chip('Model OpenAI: GPT-5, effort Low'));
       await fireEvent.press(screen.getByRole('radio', { name: 'Auto' }));
       expect(screen.queryByLabelText('Reasoning effort')).toBeNull();

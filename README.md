@@ -224,8 +224,9 @@ app                                api-gateway / socket-gateway
   task" show above the row.
 
   ```
-  ( task ) | Message Fama AI...            | ( GPT-5 · High ) ( ^ )
-   switch     input, multiline, max 160 dp    model chip        send
+  ( task ) | Message Fama AI...            | ( GPT-5 ) ( ^ )
+                                             (  High )
+   switch     input, multiline, max 160 dp   model chip  send
   ```
 
   Each control is 48 dp or more. The task switch has a task icon and no
@@ -314,8 +315,8 @@ app                                   api-gateway -> ai-proxy
 ```
 
 - The model chip in the composer shows the short model name (the text
-  after "Provider: ") and the effort, for example "GPT-5 · High", or
-  "Auto". TalkBack reads "Model <name>, effort <effort>" and a hint.
+  after "Provider: ") and, on a second line, the effort, for example
+  "GPT-5" and "High", or only "Auto". TalkBack reads "Model <name>, effort <effort>" and a hint.
 - The chip opens the picker (a modal with a title): a search field (it
   filters by name or id), the radio group "Model" (Auto and the list, in a
   `FlatList`, because the list can have about 400 models) and the radio

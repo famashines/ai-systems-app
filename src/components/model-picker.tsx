@@ -92,8 +92,13 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
         style={[styles.chip, { backgroundColor: colors.surfaceContainerHigh, opacity: disabled ? 0.38 : 1 }]}
       >
         <AppText variant="label" numberOfLines={1}>
-          {item ? (choice.effort ? t('chat.modelChipText', { model: shortName(item.name), effort: effortText }) : shortName(item.name)) : auto}
+          {item ? shortName(item.name) : auto}
         </AppText>
+        {choice.effort ? (
+          <AppText variant="bodySmall" color="onSurfaceVariant" numberOfLines={1}>
+            {effortText}
+          </AppText>
+        ) : null}
       </Pressable>
       <Modal testID="model-picker" visible={open && !locked} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
         <Pressable accessible={false} importantForAccessibility="no" onPress={close} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
@@ -181,7 +186,7 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
   },
-  chip: { minHeight: touchTarget, minWidth: touchTarget, maxWidth: 136, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.md, borderRadius: radius.full, overflow: 'hidden' },
+  chip: { minHeight: touchTarget, minWidth: touchTarget, maxWidth: 104, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.full, overflow: 'hidden' },
   search: { minHeight: touchTarget, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.full, textAlign: 'auto' },
   row: { minHeight: touchTarget + spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

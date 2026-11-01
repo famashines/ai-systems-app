@@ -220,7 +220,6 @@
   "chat.model": "ماڈل",
   "chat.modelAuto": "خود کار",
   "chat.modelChip": "ماڈل {model}، سوچ کی سطح {effort}",
-  "chat.modelChipText": "{model} · {effort}",
   "chat.modelHint": "اگلے نئے کام کے لیے ماڈلز اور سوچ کی سطحوں کی فہرست کھولتا ہے۔",
   "chat.modelTitle": "ماڈل اور سوچ کی سطح",
   "chat.modelSearch": "ماڈل تلاش کریں",
