@@ -14,6 +14,8 @@ const pairs: [Key, Key, number][] = [
   ['onPrimary', 'primary', 4.5],
   ['onPrimaryContainer', 'primaryContainer', 4.5],
   ['error', 'surface', 4.5],
+  ['error', 'surfaceContainer', 4.5],
+  ['error', 'primaryContainer', 4.5],
   ['onError', 'error', 4.5],
   ['onErrorContainer', 'errorContainer', 4.5],
   ['outline', 'surface', 3],

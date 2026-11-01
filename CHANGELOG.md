@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Added (M2-08)
+
+- Contracts v0.3.0. The task status `blocked` has a label.
+- Chat on one conversation for each device: `POST` and `GET
+  /api/conversations/:id/messages`, the `conversation:<id>` topic, older
+  pages until an empty page, and a "New task" switch for `newTask: true`.
+- Live agent text from the `delta` frames of `task:<taskId>`, by
+  `(taskId, callId)`, with a restart when `attempt` grows. The final agent
+  reply replaces the live text.
+- The cost of each agent reply in USD (4 decimals under 0.01 USD).
+- Budget tab: the month view from `GET /api/budget` (404 is "no cap set")
+  with live `budget` notices, and a form for the monthly cap and the soft
+  cap (`POST /api/budget`).
+- The live client changes its topics while it runs (`subscribe` and
+  `unsubscribe`) and handles `unsubscribed`.
+
+### Fixed (M2-08 review)
+
+- A topic change sends `unsubscribe` before `subscribe`. A refused
+  `subscribe` (`validation_failed`) is forgotten and sent again later.
+- A reply while the task runs (a refusal) no longer hides the live text;
+  only the reply of a `completed` or `failed` task does.
+- A first-page reload with no common message starts the paging again.
+- A quick sign-out and sign-in no longer leaves the budget on "Loading".
+- The cap input refuses a separator with exactly three digits and shows
+  the read amount before Save.
+- The hint of "New task" says that a message to a running task is
+  refused in this version.
+
+### Changed (M2-08)
+
+- The chat posts to the conversation route, not to `POST /api/tasks`.
+- The tests that sent the `resync` reason `server_restart` send `too_old`.
+
 ### Fixed
 
 - A late token answer can no longer store a refresh token after an

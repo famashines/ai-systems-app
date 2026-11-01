@@ -18,6 +18,8 @@ function setup(overrides: Partial<LiveOptions> = {}) {
     onSubscribed: jest.fn(),
     onResync: jest.fn(),
     onNotice: jest.fn(),
+    onDelta: jest.fn(),
+    onUnsubscribed: jest.fn(),
     onAuthLost: jest.fn(),
     ...overrides,
   };
@@ -424,7 +426,7 @@ it('loads the snapshot again on resync at any time and takes the next notice', a
   await flush();
   await connect(FakeSocket.last(), 101, 100);
   FakeSocket.last().receive(notice(101, 1));
-  FakeSocket.last().receive({ type: 'resync', reason: 'server_restart' });
+  FakeSocket.last().receive({ type: 'resync', reason: 'too_old' });
   expect(options.onResync).toHaveBeenCalledTimes(1);
   FakeSocket.last().receive(notice(3, 1, ids.taskB));
   expect(jest.mocked(options.onNotice).mock.calls.map(([n]) => n.seq)).toEqual([101, 3]);
@@ -469,4 +471,75 @@ it('keeps the socket when subscribed comes in time', async () => {
   FakeSocket.last().receive({ type: 'pong', t: 1 });
   await jest.advanceTimersByTimeAsync(handshakeMs);
   expect(FakeSocket.last().closedWith).toBeNull();
+});
+
+it('subscribes and unsubscribes the changed topics, and sends every topic in the first subscribe after a reconnect', async () => {
+  const { client, options } = setup({ topics: ['tasks'] });
+  client.setTopics(['tasks', 'budget']);
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  const first = FakeSocket.last();
+  expect(first.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget'] });
+  client.setTopics(['tasks', 'budget']);
+  client.setTopics(['tasks', `task:${ids.taskA}`]);
+  expect(first.sent.slice(2)).toEqual([
+    { type: 'unsubscribe', topics: ['budget'] },
+    { type: 'subscribe', topics: [`task:${ids.taskA}`] },
+  ]);
+  first.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 90 });
+  expect(options.onSubscribed).toHaveBeenCalledTimes(1);
+  first.receive({ type: 'unsubscribed', topics: ['budget'] });
+  expect(options.onUnsubscribed).toHaveBeenCalledWith(['budget']);
+  first.serverClose(1006);
+  client.setTopics(['tasks', `task:${ids.taskA}`, `task:${ids.taskB}`]);
+  await jest.advanceTimersByTimeAsync(1_000);
+  const second = FakeSocket.last();
+  expect(second).not.toBe(first);
+  expect(first.sent.filter((frame) => frame.type === 'subscribe')).toHaveLength(2);
+  await connect(second, 11);
+  expect(second.sent[0]).toEqual({ type: 'hello', v: 1, token: 'access-1', lastSeq: 10 });
+  expect(second.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', `task:${ids.taskA}`, `task:${ids.taskB}`] });
+  expect(options.onSubscribed).toHaveBeenLastCalledWith(false, 10);
+});
+
+it('passes deltas only for subscribed task topics', async () => {
+  const { client, options } = setup({ topics: ['tasks', `task:${ids.taskA}`] });
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  const delta = (taskId: string) => ({ type: 'delta' as const, taskId, callId: ids.taskC, attempt: 1, i: 0, text: 'Hi' });
+  FakeSocket.last().receive(delta(ids.taskA));
+  FakeSocket.last().receive(delta(ids.taskB));
+  client.setTopics(['tasks']);
+  FakeSocket.last().receive(delta(ids.taskA));
+  FakeSocket.last().receive('{"type":"delta","taskId":"x","callId":"y","i":0,"text":"no attempt"}');
+  expect(jest.mocked(options.onDelta).mock.calls.map(([frame]) => frame.taskId)).toEqual([ids.taskA]);
+  expect(options.onResync).not.toHaveBeenCalled();
+});
+
+it('forgets a refused subscribe and sends its topics again on the next change and after a reconnect', async () => {
+  const { client, options } = setup({ topics: ['tasks'] });
+  client.start();
+  await flush();
+  await connect(FakeSocket.last());
+  const first = FakeSocket.last();
+  client.setTopics(['tasks', `task:${ids.taskA}`]);
+  first.receive({ type: 'error', code: 'unavailable', message: 'The token cannot be checked now' });
+  first.receive({ type: 'error', code: 'validation_failed', message: 'At most 50 topics for each connection' });
+  expect(client.refusedSubscribes).toBe(1);
+  first.receive({ type: 'error', code: 'validation_failed', message: 'No frame waits' });
+  expect(client.refusedSubscribes).toBe(1);
+  client.setTopics(['tasks', `task:${ids.taskA}`, `task:${ids.taskB}`]);
+  expect(first.sent.slice(2)).toEqual([
+    { type: 'subscribe', topics: [`task:${ids.taskA}`] },
+    { type: 'subscribe', topics: [`task:${ids.taskA}`, `task:${ids.taskB}`] },
+  ]);
+  first.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`, `task:${ids.taskB}`], fromSeq: 40 });
+  expect(options.onSubscribed).toHaveBeenCalledTimes(1);
+  first.serverClose(1006);
+  await jest.advanceTimersByTimeAsync(1_000);
+  await connect(FakeSocket.last(), 11);
+  expect(FakeSocket.last().sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', `task:${ids.taskA}`, `task:${ids.taskB}`] });
+  expect(options.onSubscribed).toHaveBeenCalledTimes(2);
 });

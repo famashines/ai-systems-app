@@ -6,6 +6,7 @@ import { useLocales } from 'expo-localization';
 import type { ReactElement } from 'react';
 import { AppState, I18nManager, Text, type AppStateStatus } from 'react-native';
 
+import Budget from '@/app/(tabs)/budget';
 import Chat from '@/app/(tabs)/index';
 import Settings from '@/app/(tabs)/settings';
 import Tasks from '@/app/(tabs)/tasks';
@@ -15,7 +16,7 @@ import { LockScreen } from '@/components/lock-screen';
 import { StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
-import { cachedTasksMax, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
+import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 import { FakeSocket, fakeServer, ids, installFakeSocket, json, task } from '@/test-fakes';
@@ -62,6 +63,7 @@ beforeEach(async () => {
   await removeItem('rtlReload');
   await removeItem('lock.reloadAt');
   await removeItem(tasksCacheKey);
+  await setItem(conversationKey, conversationId);
   installFakeSocket();
   jest.mocked(auth.getAccessToken).mockImplementation(() => new Promise(() => {}));
   jest.mocked(auth.refresh).mockResolvedValue(true);
@@ -168,6 +170,9 @@ describe('Lock', () => {
 });
 
 const api = 'https://ai.famashines.com';
+const conversationId = 'd4444444-4444-4444-8444-444444444444';
+const threadRoute = `GET /api/conversations/${conversationId}/messages`;
+const postRoute = `POST /api/conversations/${conversationId}/messages`;
 let server: ReturnType<typeof fakeServer>;
 
 async function socketNumber(n: number): Promise<FakeSocket> {
@@ -214,7 +219,7 @@ describe('Live', () => {
       });
       expect(socket.sent.map((frame) => frame.type)).toEqual(['hello', 'subscribe']);
       expect(socket.sent[0]).toEqual({ type: 'hello', v: 1, token: 'access-1' });
-      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks'] });
+      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${conversationId}`] });
       expect(tasksCalls()).toHaveLength(0);
       await act(async () => socket.receive({ type: 'subscribed', topics: ['tasks'], fromSeq: 11 }));
       expect(await screen.findByText('Plan the week')).toBeOnTheScreen();
@@ -374,7 +379,7 @@ describe('Live', () => {
       await show(<Tasks />);
       const socket = await connect();
       await screen.findByText('Before');
-      await act(async () => socket.receive({ type: 'resync', reason: 'server_restart' }));
+      await act(async () => socket.receive({ type: 'resync', reason: 'too_old' }));
       expect(await screen.findByText('After restart')).toBeOnTheScreen();
       await receive(socket, 3, task(ids.taskB, 1, 'New stream'));
       expect(await screen.findByText('New stream')).toBeOnTheScreen();
@@ -467,18 +472,127 @@ describe('Live', () => {
   });
 
   describe('Chat', () => {
-    it('turns off the input and send while offline', async () => {
+    const owner = (messageId: string, text: string, rev = 1, taskId?: string, createdAt = '2026-11-01T10:00:00.000Z') => ({
+      role: 'owner' as const,
+      messageId,
+      text,
+      intent: 'new_task' as const,
+      createdAt,
+      rev,
+      asOf: 1,
+      ...(taskId ? { taskId } : {}),
+    });
+    const agent = (messageId: string, taskId: string, text: string, costMicroUsd?: number, rev = 1) => ({
+      role: 'agent' as const,
+      messageId,
+      taskId,
+      text,
+      createdAt: '2026-11-01T10:01:00.000Z',
+      rev,
+      asOf: 2,
+      ...(costMicroUsd === undefined ? {} : { costMicroUsd }),
+    });
+    const said = async (socket: FakeSocket, seq: number, message: ReturnType<typeof owner> | ReturnType<typeof agent>, commandId?: string) =>
+      act(async () =>
+        socket.receive({ type: 'notice', seq, topic: `conversation:${conversationId}`, docId: message.messageId, rev: message.rev, data: message, ...(commandId ? { commandId } : {}) }),
+      );
+    const delta = async (socket: FakeSocket, attempt: number, i: number, text: string, taskId = ids.taskA) =>
+      act(async () => socket.receive({ type: 'delta', taskId, callId: ids.taskC, attempt, i, text }));
+    const posted = (messageId = ids.taskB) => json(202, { conversationId, messageId, intent: 'new_task' });
+    const threadCalls = () => server.requests.filter((request) => request.method === 'GET' && request.path === `/api/conversations/${conversationId}/messages`);
+
+    beforeEach(() => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+    });
+
+    it('turns off the input, the new task switch and send while offline', async () => {
       await show(<Chat />);
       expect(await screen.findByText('No messages yet.')).toBeOnTheScreen();
       expect(screen.getByText('Offline. You can send when the connection is back.')).toBeOnTheScreen();
       expect(screen.getByLabelText('Message')).toHaveProp('editable', false);
       expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+      expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
+    });
+
+    it('reads the thread after subscribed, keeps one conversation id, and reads older pages until an empty page', async () => {
+      const newest = owner(ids.taskA, 'Newest', 1, undefined, '2026-11-01T10:05:00.000Z');
+      const older = owner(ids.taskB, 'Older', 1, undefined, '2026-11-01T09:00:00.000Z');
+      server.on(threadRoute, json(200, { items: [newest], headSeq: 10 }), json(200, { items: [older], headSeq: 10 }), json(200, { items: [], headSeq: 10 }));
+      await show(<Chat />);
+      await connect();
+      expect(await screen.findByText('Newest')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Newest. Received')).toBeOnTheScreen();
+      expect(Object.fromEntries(threadCalls()[0]!.query)).toEqual({ limit: '50' });
+      await act(async () => fireEvent(screen.getByTestId('chat-list'), 'onEndReached'));
+      expect(await screen.findByText('Older')).toBeOnTheScreen();
+      expect(Object.fromEntries(threadCalls()[1]!.query)).toEqual({ limit: '50', before: newest.createdAt, beforeId: ids.taskA });
+      await act(async () => fireEvent(screen.getByTestId('chat-list'), 'onEndReached'));
+      await waitFor(() => expect(threadCalls()).toHaveLength(3));
+      expect(Object.fromEntries(threadCalls()[2]!.query)).toEqual({ limit: '50', before: older.createdAt, beforeId: ids.taskB });
+      await act(async () => fireEvent(screen.getByTestId('chat-list'), 'onEndReached'));
+      expect(threadCalls()).toHaveLength(3);
+      expect((await getItem(conversationKey))?.value).toBe(conversationId);
+    });
+
+    it('clears the thread, live text, sent messages and budget on sign-out, and keeps the conversation id for the next sign-in', async () => {
+      server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 1, 'Old task')], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [owner(ids.taskB, 'Old thread', 2, ids.taskA)], headSeq: 10 }));
+      server.on('GET /api/budget', json(200, { month: '2026-11', capMicroUsd: 5_000_000, spentMicroUsd: 0, reservedMicroUsd: 0, remainingMicroUsd: 5_000_000, overCapMicroUsd: 0, rev: 1, asOf: 1 }));
+      server.on(postRoute, new TypeError('Network request failed'));
+      jest.mocked(auth.signIn).mockResolvedValue(true);
+      await show(
+        <>
+          <Chat />
+          <Budget />
+          <Settings />
+          <Login />
+        </>,
+      );
+      const socket = await connect();
+      await screen.findByText('Old thread');
+      await screen.findByText('Month 2026-11');
+      await delta(socket, 1, 0, 'Old stream');
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Pending text');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await screen.findByText('Not sent');
+      expect(screen.getByText('Old stream')).toBeOnTheScreen();
+      await waitFor(async () => expect(await getItem(tasksCacheKey)).not.toBeNull());
+      await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
+      await waitFor(async () => expect(await getItem(tasksCacheKey)).toBeNull());
+      await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+      await socketNumber(2);
+      for (const text of ['Old thread', 'Old stream', 'Pending text', 'Month 2026-11']) expect(screen.queryByText(text)).toBeNull();
+      expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Loading the budget')).toBeOnTheScreen();
+      expect((await getItem(conversationKey))?.value).toBe(conversationId);
+    });
+
+    it('makes and keeps a conversation id when the device has none', async () => {
+      await removeItem(conversationKey);
+      await show(<Chat />);
+      const socket = await socketNumber(1);
+      await act(async () => {
+        socket.open();
+        socket.receive({ type: 'welcome', sessionId: ids.session, headSeq: 10, heartbeatMs: 20_000 });
+      });
+      const made = (await getItem<string>(conversationKey))?.value;
+      expect(Id.safeParse(made).success).toBe(true);
+      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${made}`] });
+    });
+
+    it('shows the error state of the thread and reads again from the retry button', async () => {
+      server.on(threadRoute, json(503, { type: 'about:blank', title: 'Down', status: 503, code: 'unavailable' }), json(200, { items: [owner(ids.taskA, 'Back')], headSeq: 10 }));
+      await show(<Chat />);
+      await connect();
+      expect(await screen.findByText('The messages did not load.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('Back')).toBeOnTheScreen();
     });
 
     it('shows a message as sending at once and as received when the notice with its commandId comes', async () => {
-      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
       let answer = (_response: Response) => {};
-      server.on('POST /api/tasks', () => new Promise<Response>((resolve) => (answer = resolve)));
+      server.on(postRoute, () => new Promise<Response>((resolve) => (answer = resolve)));
       await show(<Chat />);
       const socket = await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), '  Plan the week  ');
@@ -486,19 +600,92 @@ describe('Live', () => {
       expect(screen.getByText('Plan the week')).toBeOnTheScreen();
       expect(screen.getByText('Sending')).toBeOnTheScreen();
       expect(screen.getByLabelText('Message')).toHaveProp('value', '');
-      const key = posts()[0]!.headers.get('Idempotency-Key')!;
+      const post = posts()[0]!;
+      const key = post.headers.get('Idempotency-Key')!;
       expect(Id.safeParse(key).success).toBe(true);
-      expect(posts()[0]!.body).toEqual({ text: 'Plan the week', mode: 'approval' });
-      await receive(socket, 11, task(ids.taskA, 1, 'Plan the week'), key);
+      expect(post.body).toEqual({ text: 'Plan the week', newTask: false });
+      await said(socket, 11, owner(ids.taskB, 'Plan the week'), key);
       expect(screen.getByText('Received')).toBeOnTheScreen();
-      await act(async () => answer(json(202, { taskId: ids.taskA, version: 1 })));
+      expect(screen.getAllByText('Plan the week')).toHaveLength(1);
+      await act(async () => answer(posted()));
       expect(screen.getByText('Received')).toBeOnTheScreen();
+      expect(screen.getAllByText('Plan the week')).toHaveLength(1);
+    });
+
+    it('sends newTask true once when the new task switch is on', async () => {
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on(postRoute, posted(ids.taskA), posted(ids.taskB));
+      await show(<Chat />);
+      await connect();
+      await fireEvent.press(screen.getByRole('switch', { name: 'New task' }));
+      expect(screen.getByRole('switch', { name: 'New task' })).toBeChecked();
+      expect(screen.getByText('The next message starts a new task.')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Another topic');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      expect(screen.getByRole('switch', { name: 'New task' })).not.toBeChecked();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Follow up');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(2));
+      expect(posts().map((request) => request.body)).toEqual([
+        { text: 'Another topic', newTask: true },
+        { text: 'Follow up', newTask: false },
+      ]);
+    });
+
+    it('streams the deltas of the task, restarts on a new attempt, and replaces the text with the final reply and its cost', async () => {
+      server.on(threadRoute, json(200, { items: [owner(ids.taskB, 'Write a poem')], headSeq: 10 }));
+      await show(<Chat />);
+      const socket = await connect();
+      await screen.findByText('Write a poem');
+      await said(socket, 11, owner(ids.taskB, 'Write a poem', 2, ids.taskA));
+      expect(socket.sent.at(-1)).toEqual({ type: 'subscribe', topics: [`task:${ids.taskA}`] });
+      await act(async () => socket.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 30 }));
+      expect(threadCalls()).toHaveLength(1);
+      await delta(socket, 1, 0, 'Roses ');
+      await delta(socket, 1, 1, 'are red');
+      expect(screen.getByTestId(`stream-${ids.taskA}`)).toHaveTextContent('Roses are redWriting');
+      expect(screen.getByTestId(`stream-${ids.taskA}`)).not.toHaveProp('accessibilityLiveRegion');
+      await delta(socket, 2, 0, 'Violets');
+      expect(screen.getByText('Violets')).toBeOnTheScreen();
+      expect(screen.queryByText(/Roses/)).toBeNull();
+      await delta(socket, 1, 2, ' late');
+      expect(screen.getByText('Violets')).toBeOnTheScreen();
+      await receive(socket, 12, task(ids.taskA, 2, 'Write a poem', undefined, 'running'));
+      await said(socket, 13, agent(ids.taskC, ids.taskA, 'Violets are blue'));
+      expect(screen.getByText('Violets are blue')).toBeOnTheScreen();
+      expect(screen.getByTestId(`stream-${ids.taskA}`)).toBeOnTheScreen();
+      await receive(socket, 14, task(ids.taskA, 3, 'Write a poem', undefined, 'completed'));
+      expect(screen.queryByTestId(`stream-${ids.taskA}`)).toBeNull();
+      await said(socket, 15, agent(ids.taskC, ids.taskA, 'Violets are blue', 1_234, 2));
+      expect(screen.getByText('Cost $0.0012')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Agent: Violets are blue. Cost $0.0012')).toHaveProp('accessibilityLiveRegion', 'polite');
+      expect(socket.sent.at(-1)).toEqual({ type: 'unsubscribe', topics: [`task:${ids.taskA}`] });
+      await act(async () => socket.receive({ type: 'unsubscribed', topics: [`task:${ids.taskA}`] }));
+      await delta(socket, 2, 1, ' stray');
+      expect(screen.queryByTestId(`stream-${ids.taskA}`)).toBeNull();
+    });
+
+    it('keeps the task topic after a refusal reply while the task runs', async () => {
+      server.on(threadRoute, json(200, { items: [agent(ids.taskC, ids.taskA, 'The task is running. Wait for it.'), owner(ids.taskB, 'Plan', 2, ids.taskA)], headSeq: 10 }));
+      await show(<Chat />);
+      const socket = await connect();
+      await screen.findByText('The task is running. Wait for it.');
+      expect(socket.sent.filter((frame) => frame.type === 'subscribe')).toHaveLength(1);
+      await receive(socket, 11, task(ids.taskA, 2, 'Plan', undefined, 'running'));
+      await waitFor(() => expect(socket.sent.at(-1)).toEqual({ type: 'subscribe', topics: [`task:${ids.taskA}`] }));
+      await delta(socket, 1, 0, 'Still going');
+      expect(screen.getByText('Still going')).toBeOnTheScreen();
+      await said(socket, 12, agent('e5555555-5555-4555-8555-555555555555', ids.taskA, 'The task is running. Wait for it, again.'));
+      expect(screen.getByText('Still going')).toBeOnTheScreen();
+      await receive(socket, 13, task(ids.taskA, 3, 'Plan', undefined, 'completed'));
+      expect(screen.queryByText('Still going')).toBeNull();
+      expect(socket.sent.at(-1)).toEqual({ type: 'unsubscribe', topics: [`task:${ids.taskA}`] });
     });
 
     it('shows still processing after 10 s without the notice', async () => {
       jest.useFakeTimers();
-      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
-      server.on('POST /api/tasks', json(202, { taskId: ids.taskA, version: 1 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on(postRoute, posted());
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
@@ -510,10 +697,10 @@ describe('Live', () => {
     });
 
     it('shows not sent on a network error, and the retry sends the same key', async () => {
-      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
-      server.on('POST /api/tasks', new TypeError('Network request failed'), json(202, { taskId: ids.taskA, version: 1 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on(postRoute, new TypeError('Network request failed'), posted());
       await show(<Chat />);
-      const socket = await connect();
+      await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
       await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
       expect(await screen.findByText('Not sent')).toBeOnTheScreen();
@@ -521,14 +708,35 @@ describe('Live', () => {
       await waitFor(() => expect(posts()).toHaveLength(2));
       const [first, second] = posts().map((request) => request.headers.get('Idempotency-Key'));
       expect(second).toBe(first);
-      await receive(socket, 11, task(ids.taskA, 1, 'Plan'));
+      expect(await screen.findByText('Sending')).toBeOnTheScreen();
+    });
+
+    it('keeps the thread and shows the error when a snapshot read fails', async () => {
+      server.on(threadRoute, json(200, { items: [owner(ids.taskA, 'Kept')], headSeq: 10 }), json(503, { type: 'about:blank', title: 'Down', status: 503, code: 'unavailable' }));
+      await show(<Chat />);
+      const socket = await connect();
+      await screen.findByText('Kept');
+      await act(async () => socket.receive({ type: 'resync', reason: 'too_old' }));
+      expect(await screen.findByText('The messages did not load.')).toBeOnTheScreen();
+      expect(screen.getByText('Kept')).toBeOnTheScreen();
+    });
+
+    it('drops the sent message when the thread snapshot has its messageId', async () => {
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }), json(200, { items: [owner(ids.taskB, 'Plan')], headSeq: 12 }));
+      server.on(postRoute, posted());
+      await show(<Chat />);
+      const socket = await connect();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      await act(async () => socket.receive({ type: 'resync', reason: 'too_old' }));
       expect(await screen.findByText('Received')).toBeOnTheScreen();
       expect(screen.getAllByText('Plan')).toHaveLength(1);
     });
 
     it('shows a refused message with no retry', async () => {
-      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
-      server.on('POST /api/tasks', json(422, { type: 'about:blank', title: 'Bad', status: 422, code: 'validation_failed' }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on(postRoute, json(422, { type: 'about:blank', title: 'Bad', status: 422, code: 'validation_failed' }));
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
@@ -538,7 +746,7 @@ describe('Live', () => {
     });
 
     it('limits the input to 20000 characters and refuses a longer text with no retry', async () => {
-      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
       await show(<Chat />);
       await connect();
       expect(screen.getByLabelText('Message')).toHaveProp('maxLength', 20_000);
@@ -550,8 +758,8 @@ describe('Live', () => {
     });
 
     it('announces the status of a message', async () => {
-      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
-      server.on('POST /api/tasks', json(202, { taskId: ids.taskA, version: 1 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on(postRoute, posted());
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
@@ -562,8 +770,8 @@ describe('Live', () => {
     it('shows the wait while the service is not available', async () => {
       jest.useFakeTimers();
       jest.spyOn(Math, 'random').mockReturnValue(0);
-      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
-      server.on('POST /api/tasks', json(503, { type: 'about:blank', title: 'Down', status: 503, code: 'unavailable' }), json(202, { taskId: ids.taskA, version: 1 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on(postRoute, json(503, { type: 'about:blank', title: 'Down', status: 503, code: 'unavailable' }), posted());
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
@@ -572,6 +780,194 @@ describe('Live', () => {
       await act(async () => jest.advanceTimersByTime(1_000));
       expect(await screen.findByText('Sending')).toBeOnTheScreen();
       expect(posts()).toHaveLength(2);
+    });
+
+    it('shows the cost in German', async () => {
+      jest.mocked(useLocales).mockReturnValue([{ languageCode: 'de' } as ReturnType<typeof useLocales>[number]]);
+      server.on(threadRoute, json(200, { items: [agent(ids.taskC, ids.taskA, 'Fertig', 2_500_000)], headSeq: 10 }));
+      await show(<Chat />);
+      await connect();
+      expect(await screen.findByText(/^Kosten 2,50\s\$$/)).toBeOnTheScreen();
+    });
+  });
+
+  describe('Budget', () => {
+    const month = (change: Record<string, unknown> = {}) => ({
+      month: '2026-11',
+      capMicroUsd: 5_000_000,
+      softCapMicroUsd: 4_000_000,
+      spentMicroUsd: 1_234_567,
+      reservedMicroUsd: 20_000,
+      remainingMicroUsd: 3_745_433,
+      overCapMicroUsd: 0,
+      rev: 3,
+      asOf: 7,
+      ...change,
+    });
+    const notFound = () => json(404, { type: 'about:blank', title: 'Not Found', status: 404, code: 'not_found' });
+    const budgetCalls = () => server.requests.filter((request) => request.method === 'GET' && request.path === '/api/budget');
+    const sendBudget = async (socket: FakeSocket, seq: number, data: ReturnType<typeof month>, rev = data.rev) =>
+      act(async () => socket.receive({ type: 'notice', seq, topic: 'budget', docId: data.month, rev, data }));
+
+    beforeEach(() => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+    });
+
+    it('shows the cap, soft cap, spent, reserved and remaining of the month, and applies a newer notice', async () => {
+      server.on('GET /api/budget', json(200, month()));
+      await show(<Budget />);
+      expect(screen.getByLabelText('Loading the budget')).toBeOnTheScreen();
+      const socket = await connect();
+      expect(await screen.findByText('Month 2026-11')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Monthly cap: $5.00')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Soft cap: $4.00')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Spent: $1.23')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Reserved: $0.02')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Remaining: $3.75')).toBeOnTheScreen();
+      expect(screen.queryByText('Over the cap')).toBeNull();
+      expect(screen.getByLabelText('Monthly cap in USD')).toHaveProp('value', '5');
+      await sendBudget(socket, 11, month({ spentMicroUsd: 6_000_000, remainingMicroUsd: 0, overCapMicroUsd: 1_000_000 }), 4);
+      expect(screen.getByLabelText('Over the cap: $1.00')).toBeOnTheScreen();
+      await sendBudget(socket, 12, month({ month: '2026-10', spentMicroUsd: 9 }), 9);
+      await sendBudget(socket, 13, month({ spentMicroUsd: 1 }), 4);
+      expect(screen.getByLabelText('Spent: $6.00')).toBeOnTheScreen();
+      expect(budgetCalls()).toHaveLength(1);
+    });
+
+    it('shows no cap set on 404, sets the cap with the soft cap, and reads the month again', async () => {
+      server.on('GET /api/budget', notFound(), json(200, month({ spentMicroUsd: 0, reservedMicroUsd: 0, remainingMicroUsd: 5_000_000 })));
+      server.on('POST /api/budget', json(202, { version: 1 }));
+      await show(<Budget />);
+      await connect();
+      expect(await screen.findByText('No cap is set. The agents cannot call a model until you set a cap.')).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Save cap' })).toBeDisabled();
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '5,00');
+      await fireEvent.changeText(screen.getByLabelText('Soft cap in USD, optional'), '4');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText('The cap is saved. The view updates in a moment.')).toBeOnTheScreen();
+      const [post] = posts();
+      expect(post!.body).toEqual({ scope: { kind: 'month' }, hardCapMicroUsd: 5_000_000, softCapMicroUsd: 4_000_000 });
+      expect(Id.safeParse(post!.headers.get('Idempotency-Key')).success).toBe(true);
+      expect(await screen.findByLabelText('Monthly cap: $5.00')).toBeOnTheScreen();
+      expect(budgetCalls()).toHaveLength(2);
+    });
+
+    it('reads the month again on a budget notice while no cap is shown', async () => {
+      server.on('GET /api/budget', notFound(), json(200, month()));
+      await show(<Budget />);
+      const socket = await connect();
+      await screen.findByText(/^No cap is set/);
+      await sendBudget(socket, 11, month());
+      expect(await screen.findByLabelText('Monthly cap: $5.00')).toBeOnTheScreen();
+    });
+
+    it('checks the amounts before it sends, and keeps the key for a retry after a network error', async () => {
+      server.on('GET /api/budget', json(200, month()));
+      server.on('POST /api/budget', new TypeError('Network request failed'), json(202, { version: 2 }));
+      await show(<Budget />);
+      await connect();
+      await screen.findByText('Month 2026-11');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), 'abc');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Write an amount from 0 to 1000000 USD, for example 5.00.');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '2000000');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText(/^Write an amount/)).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '3');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText('The soft cap must not be above the monthly cap.')).toBeOnTheScreen();
+      expect(posts()).toHaveLength(0);
+      await fireEvent.changeText(screen.getByLabelText('Soft cap in USD, optional'), '');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText('The cap is not saved. Try again.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText('The cap is saved. The view updates in a moment.')).toBeOnTheScreen();
+      expect(posts().map((request) => request.body)).toEqual([
+        { scope: { kind: 'month' }, hardCapMicroUsd: 3_000_000 },
+        { scope: { kind: 'month' }, hardCapMicroUsd: 3_000_000 },
+      ]);
+      const [first, second] = posts().map((request) => request.headers.get('Idempotency-Key'));
+      expect(second).toBe(first);
+    });
+
+    it('shows a refused cap', async () => {
+      server.on('GET /api/budget', json(200, month()));
+      server.on('POST /api/budget', json(403, { type: 'about:blank', title: 'Forbidden', status: 403, code: 'forbidden' }));
+      await show(<Budget />);
+      await connect();
+      await screen.findByText('Month 2026-11');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText('The server did not accept this cap.')).toBeOnTheScreen();
+    });
+
+    it('shows the error state and reads again from the retry button', async () => {
+      server.on('GET /api/budget', json(503, { type: 'about:blank', title: 'Down', status: 503, code: 'unavailable' }), json(200, month()));
+      await show(<Budget />);
+      await connect();
+      expect(await screen.findByText('The budget did not load.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('Month 2026-11')).toBeOnTheScreen();
+    });
+
+    it('shows the offline state when there is no connection at the start', async () => {
+      await show(<Budget />);
+      const socket = await socketNumber(1);
+      await act(async () => socket.serverClose(1006));
+      expect(await screen.findByText('Offline. You can change the cap when the connection is back.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      await socketNumber(2);
+    });
+
+    it('reads the budget in a new session after a sign-out while the old read still waits', async () => {
+      server.on('GET /api/budget', () => new Promise<Response>(() => {}), json(200, month()));
+      jest.mocked(auth.signIn).mockResolvedValue(true);
+      await show(
+        <>
+          <Budget />
+          <Settings />
+          <Login />
+        </>,
+      );
+      await connect();
+      await waitFor(() => expect(budgetCalls()).toHaveLength(1));
+      await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
+      await fireEvent.press(await screen.findByRole('button', { name: 'Sign in' }));
+      await connect(2);
+      expect(await screen.findByText('Month 2026-11')).toBeOnTheScreen();
+      expect(budgetCalls()).toHaveLength(2);
+    });
+
+    it('shows the read amount before Save and refuses a separator with exactly three digits', async () => {
+      server.on('GET /api/budget', notFound());
+      await show(<Budget />);
+      await connect();
+      await screen.findByText(/^No cap is set/);
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '1,5');
+      expect(screen.getByTestId('budget-hard-read')).toHaveTextContent('Amount: $1.50');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '0.000001');
+      expect(screen.getByTestId('budget-hard-read')).toHaveTextContent('Amount: $0.000001');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '1,000');
+      expect(screen.queryByTestId('budget-hard-read')).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText('A dot or comma with exactly three digits after it is not clear. Write 1000 for one thousand USD, or 1.00 for one USD.')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Soft cap in USD, optional'), '1.000');
+      await fireEvent.changeText(screen.getByLabelText('Monthly cap in USD'), '2');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save cap' }));
+      expect(await screen.findByText(/^A dot or comma with exactly three digits/)).toBeOnTheScreen();
+      expect(posts()).toHaveLength(0);
+    });
+
+    it('is in Urdu, right to left, with the offline note', async () => {
+      jest.mocked(useLocales).mockReturnValue([{ languageCode: 'ur' } as ReturnType<typeof useLocales>[number]]);
+      server.on('GET /api/budget', notFound());
+      await show(<Budget />);
+      const socket = await connect();
+      expect(await screen.findByRole('header', { name: 'بجٹ' })).toBeOnTheScreen();
+      expect(await screen.findByText(/^کوئی حد مقرر نہیں/)).toBeOnTheScreen();
+      await act(async () => socket.serverClose(1006));
+      expect(screen.getByText('آف لائن۔ کنکشن واپس آنے پر آپ حد بدل سکتے ہیں۔')).toBeOnTheScreen();
+      expect(I18nManager.forceRTL).toHaveBeenLastCalledWith(true);
     });
   });
 });

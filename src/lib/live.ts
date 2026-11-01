@@ -11,6 +11,7 @@ export const refusedWindowMs = 60_000;
 
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'stopped';
 export type Notice = Extract<ServerMessageV1, { type: 'notice' }>;
+export type DeltaMessage = Extract<ServerMessageV1, { type: 'delta' }>;
 export type AuthLost = 'expired' | 'refused';
 
 export type LiveOptions = {
@@ -23,6 +24,8 @@ export type LiveOptions = {
   onSubscribed: (snapshot: boolean, lastSeq: number) => void;
   onResync: () => void;
   onNotice: (notice: Notice) => void;
+  onDelta: (delta: DeltaMessage) => void;
+  onUnsubscribed: (topics: Topic[]) => void;
   onAuthLost: (reason: AuthLost) => void;
 };
 
@@ -41,11 +44,32 @@ export class LiveClient {
   private stopped = true;
   private subscribed = false;
   private connected = false;
+  private asked: { topics: Topic[]; first: boolean }[] = [];
+  private topics: Topic[];
+  private sent: Set<Topic> | null = null;
   lastSeq: number | null;
   invalidFrames = 0;
+  refusedSubscribes = 0;
 
   constructor(private readonly options: LiveOptions) {
     this.lastSeq = options.lastSeq || null;
+    this.topics = [...options.topics];
+  }
+
+  setTopics(topics: Topic[]): void {
+    this.topics = [...topics];
+    const sent = this.sent;
+    if (!sent) return;
+    const added = topics.filter((topic) => !sent.has(topic));
+    const removed = [...sent].filter((topic) => !topics.includes(topic));
+    this.sent = new Set(topics);
+    if (removed.length > 0) this.send({ type: 'unsubscribe', topics: removed });
+    if (added.length > 0) this.subscribe(added, false);
+  }
+
+  private subscribe(topics: Topic[], first: boolean): void {
+    this.asked.push({ topics, first });
+    this.send({ type: 'subscribe', topics });
   }
 
   start(): void {
@@ -93,6 +117,8 @@ export class LiveClient {
     this.timer = undefined;
     this.pongTimer = undefined;
     this.subscribed = false;
+    this.asked = [];
+    this.sent = null;
   }
 
   private replace(ws: WebSocket | null): void {
@@ -163,13 +189,15 @@ export class LiveClient {
     switch (message.type) {
       case 'welcome':
         this.heartbeatMs = Math.max(message.heartbeatMs, minHeartbeatMs);
-        this.send({ type: 'subscribe', topics: this.options.topics });
+        this.sent = new Set(this.topics);
+        this.subscribe(this.topics, true);
         return;
       case 'resync':
         this.lastSeq = null;
         if (this.subscribed) this.options.onResync();
         return;
       case 'subscribed': {
+        if (!this.asked.shift()?.first) return;
         const snapshot = !this.lastSeq || message.fromSeq > this.lastSeq + 1;
         if (!this.lastSeq) this.lastSeq = Math.max(message.fromSeq - 1, 0);
         clearTimeout(this.handshakeTimer);
@@ -189,6 +217,20 @@ export class LiveClient {
         this.lastSeq = message.seq;
         this.options.onNotice(message);
         return;
+      case 'delta':
+        if (this.topics.includes(`task:${message.taskId}`)) this.options.onDelta(message);
+        return;
+      case 'unsubscribed':
+        this.options.onUnsubscribed(message.topics);
+        return;
+      case 'error': {
+        if (message.code !== 'validation_failed') return;
+        const refused = this.asked.shift();
+        if (!refused) return;
+        this.refusedSubscribes += 1;
+        for (const topic of refused.topics) this.sent?.delete(topic);
+        return;
+      }
       case 'ping':
         this.send({ type: 'pong', t: message.t });
         return;

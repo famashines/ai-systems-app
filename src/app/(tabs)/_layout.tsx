@@ -22,6 +22,10 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Icon sf="checklist" md={I18nManager.isRTL ? 'checklist_rtl' : 'checklist'} />
         <NativeTabs.Trigger.Label>{t('tabs.tasks')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="budget">
+        <NativeTabs.Trigger.Icon sf="dollarsign.circle" md="savings" />
+        <NativeTabs.Trigger.Label>{t('tabs.budget')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <NativeTabs.Trigger.Icon sf="gearshape" md="settings" />
         <NativeTabs.Trigger.Label>{t('tabs.settings')}</NativeTabs.Trigger.Label>
