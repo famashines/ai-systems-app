@@ -1,6 +1,6 @@
-import { ApiError, getBudget, getThread, listTasks, postMessage, setBudget } from '@/lib/api';
+import { ApiError, control, getBudget, getOutput, getTask, getThread, listAgents, listTasks, postMessage, setBudget } from '@/lib/api';
 import * as auth from '@/lib/auth';
-import { fakeServer, ids, json, task } from '@/test-fakes';
+import { detail, fakeServer, ids, json, subtaskIds, task } from '@/test-fakes';
 
 jest.mock('@/lib/auth', () => ({
   getAccessToken: jest.fn(async () => 'access-1'),
@@ -171,4 +171,81 @@ it('refuses a cap that does not fit the contract before any request', async () =
   await expect(setBudget(1_000_000_000_001, undefined, commandId)).rejects.toMatchObject({ kind: 'rejected', status: 0 });
   await expect(setBudget(1.5, undefined, commandId)).rejects.toMatchObject({ kind: 'rejected', status: 0 });
   expect(server.requests).toHaveLength(0);
+});
+
+describe('owner controls', () => {
+  const accepted = (version = 5) => json(202, { taskId: ids.taskA, version });
+  const controlRoute = (name: string) => `POST /api/tasks/${ids.taskA}/${name}`;
+
+  it('posts each control to its path with its own Idempotency-Key and no taskId in the body', async () => {
+    server.on(controlRoute('approve-plan'), accepted(2));
+    server.on(controlRoute('retry-subtask'), accepted(3));
+    expect(await control(ids.taskA, 'approve-plan', { planVersion: 1 }, commandId)).toBe(2);
+    expect(await control(ids.taskA, 'retry-subtask', { subtaskId: subtaskIds[0]! }, ids.taskC)).toBe(3);
+    const [approve, retry] = server.requests;
+    expect(approve!.headers.get('Idempotency-Key')).toBe(commandId);
+    expect(approve!.headers.get('Authorization')).toBe('Bearer access-1');
+    expect(approve!.body).toEqual({ planVersion: 1 });
+    expect(retry!.headers.get('Idempotency-Key')).toBe(ids.taskC);
+    expect(retry!.body).toEqual({ subtaskId: subtaskIds[0] });
+  });
+
+  it('refuses a body that does not fit the contract before any request', async () => {
+    await expect(control(ids.taskA, 'reject-plan', { planVersion: 1, reason: '' }, commandId)).rejects.toMatchObject({ kind: 'rejected' });
+    await expect(control('not-an-id', 'pause-run', {}, commandId)).rejects.toMatchObject({ kind: 'rejected' });
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it('gives 409 and 400 as rejected with the status, and does not retry them', async () => {
+    server.on(controlRoute('resume-run'), problem(409, 'conflict'), problem(400, 'validation_failed'));
+    await expect(control(ids.taskA, 'resume-run', {}, commandId)).rejects.toMatchObject({ kind: 'rejected', status: 409 });
+    await expect(control(ids.taskA, 'resume-run', {}, commandId)).rejects.toMatchObject({ kind: 'rejected', status: 400 });
+    expect(server.requests).toHaveLength(2);
+  });
+
+  it('retries 503 with the same key and tells the caller that it waits', async () => {
+    jest.useFakeTimers();
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    server.on(controlRoute('pause-run'), problem(503, 'unavailable'), accepted());
+    const waits: string[] = [];
+    const done = control(ids.taskA, 'pause-run', {}, commandId, (kind) => waits.push(kind));
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(await done).toBe(5);
+    expect(waits).toEqual(['unavailable']);
+    expect(server.requests.map((request) => request.headers.get('Idempotency-Key'))).toEqual([commandId, commandId]);
+    jest.restoreAllMocks();
+  });
+
+  it('gives unavailable after the last 503, and for an answer about another task', async () => {
+    jest.useFakeTimers();
+    server.on(controlRoute('cancel-run'), problem(503, 'unavailable'), problem(503, 'unavailable'), problem(503, 'unavailable'), problem(503, 'unavailable'));
+    const failed = expect(control(ids.taskA, 'cancel-run', {}, commandId)).rejects.toMatchObject({ kind: 'unavailable' });
+    await jest.advanceTimersByTimeAsync(60_000);
+    await failed;
+    jest.useRealTimers();
+    server.on(controlRoute('cancel-task'), json(202, { taskId: ids.taskB, version: 1 }));
+    await expect(control(ids.taskA, 'cancel-task', {}, commandId)).rejects.toMatchObject({ kind: 'unavailable' });
+  });
+});
+
+it('reads the task detail, the outputs and the agents, and gives null for an output that is not there yet', async () => {
+  const doc = detail();
+  server.on(`GET /api/tasks/${ids.taskA}`, json(200, doc));
+  server.on(`GET /api/tasks/${ids.taskA}/output`, json(200, { taskId: ids.taskA, runId: ids.taskC, text: 'Result' }));
+  server.on(`GET /api/tasks/${ids.taskA}/subtasks/${subtaskIds[0]}/output`, problem(404, 'not_found'));
+  server.on('GET /api/agents', json(200, { items: [], headSeq: 3 }));
+  expect(await getTask(ids.taskA)).toEqual(doc);
+  expect(await getOutput(ids.taskA)).toBe('Result');
+  expect(await getOutput(ids.taskA, subtaskIds[0])).toBeNull();
+  expect(await listAgents()).toEqual({ items: [], headSeq: 3 });
+  server.on(`GET /api/tasks/${ids.taskA}`, json(200, { ...doc, currentCall: { callId: ids.taskC, kind: 'subtask' } }));
+  await expect(getTask(ids.taskA)).rejects.toMatchObject({ kind: 'unavailable' });
+});
+
+it('sends the taskId of a reply, and never together with newTask', async () => {
+  server.on(route, json(202, { ...posted, intent: 'answer', taskId: ids.taskA }));
+  expect(await postMessage(conversationId, 'Yes, in English.', false, commandId, () => {}, ids.taskA)).toMatchObject({ intent: 'answer', taskId: ids.taskA });
+  expect(server.requests[0]!.body).toEqual({ text: 'Yes, in English.', newTask: false, taskId: ids.taskA });
+  await expect(postMessage(conversationId, 'Hi', true, commandId, () => {}, ids.taskA)).rejects.toMatchObject({ kind: 'rejected' });
+  expect(server.requests).toHaveLength(1);
 });

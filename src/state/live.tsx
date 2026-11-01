@@ -1,6 +1,6 @@
-import { BudgetMonthV1, Id, TaskListItemV1 } from '@famashines/ai-systems-contracts';
+import { BudgetMonthV1, Id, TaskListItemV1, type AgentListItemV1, type TaskDetailV1, type Topic } from '@famashines/ai-systems-contracts';
 import * as Crypto from 'expo-crypto';
-import { createContext, useContext, useEffect, useEffectEvent, useReducer, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useEffectEvent, useReducer, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 import { z } from 'zod';
 
@@ -8,8 +8,9 @@ import * as api from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
 import { config } from '@/lib/config';
-import { chatReducer, chatTopics, emptyChat, sortMessages, visibleStreams, type ChatMessage } from '@/lib/chat';
+import { callText, chatReducer, chatTopics, emptyChat, sortMessages, visibleStreams, type ChatMessage } from '@/lib/chat';
 import { LiveClient, type AuthLost, type LiveStatus, type Notice } from '@/lib/live';
+import { detailFromNotice, mergeDetail, type Details } from '@/lib/task';
 import { useSession } from '@/state/session';
 
 export const tasksCacheKey = 'live.tasks';
@@ -75,7 +76,7 @@ export function tasksReducer(state: TasksState, action: Action): TasksState {
 }
 
 export type MessageState = 'sending' | 'waiting' | 'failed' | 'rejected';
-export type Message = { key: string; text: string; newTask: boolean; state: MessageState; slow: boolean; messageId?: string; taskId?: string };
+export type Message = { key: string; text: string; newTask: boolean; state: MessageState; slow: boolean; messageId?: string; taskId?: string; replyTo?: string };
 export type Load = 'idle' | 'loading' | 'error';
 export type StreamRow = { taskId: string; text: string };
 type Budget = { doc: BudgetMonthV1 | null; load: Load; loaded: boolean };
@@ -100,10 +101,16 @@ type Value = {
   threadLoaded: boolean;
   loadOlder: () => void;
   reloadThread: () => void;
-  send: (text: string, newTask: boolean) => void;
+  send: (text: string, newTask: boolean, replyTo?: string) => void;
   retry: (key: string) => void;
   budget: Budget;
   reloadBudget: () => void;
+  details: Details;
+  detailLoad: Record<string, Load>;
+  watch: (taskId: string) => () => void;
+  reloadTask: (taskId: string) => void;
+  liveText: (taskId: string, callId: string) => string;
+  agents: AgentListItemV1[];
 };
 
 const LiveContext = createContext<Value | null>(null);
@@ -132,6 +139,19 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [budget, setBudget] = useState<Budget>({ doc: null, load: 'idle', loaded: false });
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [details, setDetails] = useState<Details>({});
+  const [detailLoad, setDetailLoad] = useState<Record<string, Load>>({});
+  const [watched, setWatched] = useState<Record<string, number>>({});
+  const [agents, setAgents] = useState<{ items: AgentListItemV1[]; loaded: boolean }>({ items: [], loaded: false });
+  const taskTopics = useRef<string[]>([]);
+  const watch = useCallback((taskId: string) => {
+    setWatched((current) => ({ ...current, [taskId]: (current[taskId] ?? 0) + 1 }));
+    return () =>
+      setWatched((current) => {
+        const { [taskId]: count = 0, ...rest } = current;
+        return count > 1 ? { ...rest, [taskId]: count - 1 } : rest;
+      });
+  }, []);
   const client = useRef<LiveClient | null>(null);
   const conversation = useRef<string | null>(null);
   const run = useRef(0);
@@ -186,7 +206,27 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
     }
   };
-  const load = () => Promise.all([loadTasks(), loadThread(), loadBudget()]);
+  const loadDetail = async (taskId: string) => {
+    const mine = run.current;
+    setDetailLoad((current) => ({ ...current, [taskId]: 'loading' }));
+    try {
+      const doc: TaskDetailV1 = await api.getTask(taskId);
+      if (mine !== run.current) return;
+      setDetails((current) => mergeDetail(current, doc));
+      setDetailLoad((current) => ({ ...current, [taskId]: 'idle' }));
+    } catch {
+      if (mine === run.current) setDetailLoad((current) => ({ ...current, [taskId]: 'error' }));
+    }
+  };
+  const loadDetails = (only: (taskId: string) => boolean = () => true) => Promise.all(taskTopics.current.filter(only).map(loadDetail));
+  const loadAgents = async () => {
+    const mine = run.current;
+    try {
+      const result = await api.listAgents();
+      if (mine === run.current) setAgents({ items: result.items, loaded: true });
+    } catch {}
+  };
+  const load = () => Promise.all([loadTasks(), loadThread(), loadBudget(), loadDetails(), loadAgents()]);
   const reloads = useRef<{ timer?: ReturnType<typeof setTimeout>; running: boolean; again: boolean }>({ running: false, again: false });
   const reload = () => {
     const state = reloads.current;
@@ -207,12 +247,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     if (needed) void loadTasks();
     if (needed || !chat.loaded) void loadThread();
     if (needed || !budget.loaded) void loadBudget();
+    if (needed || !agents.loaded) void loadAgents();
+    void loadDetails((taskId) => needed || !(taskId in details));
+  });
+  const laterSubscribed = useEffectEvent((topics: Topic[]) => {
+    for (const topic of topics) if (topic.startsWith('task:')) void loadDetail(topic.slice('task:'.length));
   });
   const reloadSnapshot = useEffectEvent(reload);
   const authLost = useEffectEvent((reason: AuthLost) => void session.signOut(reason === 'refused' ? 'refused' : undefined).catch(() => {}));
   const noticed = useEffectEvent((notice: Notice) => {
     dispatch({ type: 'notice', notice });
     if (notice.topic === 'tasks') return;
+    if (notice.topic.startsWith('task:')) {
+      setDetails((current) => detailFromNotice(current, notice));
+      return;
+    }
     if (notice.topic === 'budget') {
       const month = BudgetMonthV1.safeParse(notice.data);
       if (!month.success || month.data.month !== notice.docId) return;
@@ -259,6 +308,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'subscribed', lastSeq, snapshot: needed });
           subscribed(needed);
         },
+        onLaterSubscribed: (topics) => laterSubscribed(topics),
         onResync: () => {
           dispatch({ type: 'resync' });
           reloadSnapshot();
@@ -302,6 +352,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       setThreadLoad('idle');
       setThreadMore('idle');
       setBudget({ doc: null, load: 'idle', loaded: false });
+      setDetails({});
+      setDetailLoad({});
+      setAgents({ items: [], loaded: false });
+      taskTopics.current = [];
     };
   }, [session.status]);
 
@@ -328,16 +382,24 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const thread = sortMessages(chat.items);
   const pendingRows = messages.filter((message) => !(message.messageId && message.messageId in chat.items)).reverse();
   const topics = conversationId
-    ? chatTopics(conversationId, [...pendingRows.map((message) => ({ role: 'owner' as const, taskId: message.taskId })), ...thread], (taskId) => tasks.items[taskId]?.status)
+    ? chatTopics(
+        conversationId,
+        [...pendingRows.map((message) => ({ role: 'owner' as const, taskId: message.taskId ?? message.replyTo })), ...thread],
+        (taskId) => tasks.items[taskId]?.status,
+        Object.keys(watched),
+      )
     : [];
   const topicsKey = topics.join(' ');
   useEffect(() => {
-    if (topicsKey) client.current?.setTopics(topicsKey.split(' ') as typeof topics);
+    if (!topicsKey) return;
+    const list = topicsKey.split(' ') as typeof topics;
+    taskTopics.current = list.filter((topic) => topic.startsWith('task:')).map((topic) => topic.slice('task:'.length));
+    client.current?.setTopics(list);
   }, [topicsKey]);
 
   const patch = (key: string, change: Partial<Message>) => setMessages((list) => list.map((message) => (message.key === key ? { ...message, ...change } : message)));
 
-  const submit = async (key: string, text: string, newTask: boolean) => {
+  const submit = async (key: string, text: string, newTask: boolean, replyTo?: string) => {
     const mine = run.current;
     const id = conversation.current;
     if (!id) return;
@@ -347,9 +409,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       setTimeout(() => patch(key, { slow: true }), slowAfterMs),
     );
     try {
-      const result = await api.postMessage(id, text, newTask, key, () => {
-        if (mine === run.current) patch(key, { state: 'waiting' });
-      });
+      const result = await api.postMessage(
+        id,
+        text,
+        newTask,
+        key,
+        () => {
+          if (mine === run.current) patch(key, { state: 'waiting' });
+        },
+        replyTo,
+      );
       if (mine === run.current) patch(key, { state: 'sending', messageId: result.messageId, ...(result.taskId ? { taskId: result.taskId } : {}) });
     } catch (error) {
       if (mine !== run.current) return;
@@ -413,21 +482,28 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           if (mine === run.current) setThreadMore('error');
         });
     },
-    send: (text, newTask) => {
+    send: (text, newTask, replyTo) => {
       const trimmed = text.trim();
       if (!trimmed || !online) return;
       const key = Crypto.randomUUID();
-      setMessages((list) => [...list, { key, text: trimmed, newTask, state: 'sending', slow: false }]);
-      void submit(key, trimmed, newTask);
+      const fresh = newTask && !replyTo;
+      setMessages((list) => [...list, { key, text: trimmed, newTask: fresh, state: 'sending', slow: false, ...(replyTo ? { replyTo } : {}) }]);
+      void submit(key, trimmed, fresh, replyTo);
     },
     retry: (key) => {
       const message = messages.find((item) => item.key === key);
       if (!message || !online || message.state !== 'failed') return;
       patch(key, { state: 'sending', slow: false });
-      void submit(key, message.text, message.newTask);
+      void submit(key, message.text, message.newTask, message.replyTo);
     },
     budget,
     reloadBudget: () => void loadBudget(),
+    details,
+    detailLoad,
+    watch,
+    reloadTask: (taskId) => void loadDetail(taskId),
+    liveText: (taskId, callId) => callText(chat.streams, taskId, callId),
+    agents: agents.items,
   };
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }

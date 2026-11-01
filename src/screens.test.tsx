@@ -11,17 +11,25 @@ import Chat from '@/app/(tabs)/index';
 import Settings from '@/app/(tabs)/settings';
 import Tasks from '@/app/(tabs)/tasks';
 import Login from '@/app/login';
+import TaskScreen from '@/app/task/[id]';
+import { router } from 'expo-router';
 import { redirectSystemPath } from '@/app/+native-intent';
 import { LockScreen } from '@/components/lock-screen';
-import { StateView } from '@/components/ui';
+import { Button, StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
-import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
+import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs, useLive } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
-import { FakeSocket, fakeServer, ids, installFakeSocket, json, task } from '@/test-fakes';
+import { agentIds, detail, FakeSocket, fakeServer, ids, installFakeSocket, json, subtaskIds, task } from '@/test-fakes';
 
 jest.mock('expo', () => ({ ...jest.requireActual<object>('expo'), reloadAppAsync: jest.fn(async () => {}) }));
+
+const mockParams: { id?: string; edit?: string } = {};
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
+  useLocalSearchParams: () => mockParams,
+}));
 
 jest.mock('expo-constants', () => ({ expoConfig: { version: '0.1.0' } }));
 
@@ -788,6 +796,345 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       expect(await screen.findByText(/^Kosten 2,50\s\$$/)).toBeOnTheScreen();
+    });
+  });
+
+  describe('Task detail', () => {
+    const [s1, s2] = subtaskIds as [string, string];
+    const taskRoute = `GET /api/tasks/${ids.taskA}`;
+    const agents = {
+      items: [
+        { agentId: agentIds[0], name: 'researcher', enabled: true, activeVersion: 1, latestVersion: 1, rev: 1, asOf: 1 },
+        { agentId: agentIds[1], name: 'writer', enabled: true, activeVersion: 1, latestVersion: 1, rev: 1, asOf: 1 },
+      ],
+      headSeq: 1,
+    };
+    const state = (subtaskId: string, status: string, extra: Record<string, unknown> = {}) => ({ subtaskId, status, tries: 1, inputTokens: 0, outputTokens: 0, costMicroUsd: 0, ...extra });
+    const sendDetail = async (socket: FakeSocket, seq: number, doc: ReturnType<typeof detail>) =>
+      act(async () => socket.receive({ type: 'notice', seq, topic: `task:${ids.taskA}`, docId: ids.taskA, rev: doc.rev, data: doc }));
+    const controlPosts = (name: string) => posts().filter((request) => request.path === `/api/tasks/${ids.taskA}/${name}`);
+    const accepted = () => json(202, { taskId: ids.taskA, version: 9 });
+    const conflict = () => json(409, { type: 'about:blank', title: 'Conflict', status: 409, code: 'conflict' });
+
+    beforeEach(() => {
+      mockParams.id = ids.taskA;
+      delete mockParams.edit;
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on('GET /api/agents', json(200, agents));
+    });
+
+    it('subscribes the task topic, reads the detail after subscribed, and shows the plan by steps with text statuses', async () => {
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${conversationId}`, `task:${ids.taskA}`] });
+      expect(await screen.findByText('Plan version 1, 2 subtasks')).toBeOnTheScreen();
+      expect(screen.getByText('Plan the week')).toBeOnTheScreen();
+      expect(screen.getByText('Step 1')).toBeOnTheScreen();
+      expect(screen.getByText('Step 2')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Facts. Not started. Agent researcher')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Summary. Not started. Agent writer. After Facts')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Waiting for approval. Approval required. Cost $0.00')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Cancel task' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+    });
+
+    it('approves the plan with its version and a new key for each action, and shows the conflict and reads again on 409', async () => {
+      server.on(taskRoute, json(200, detail()), json(200, detail({ rev: 2, plan: { ...detail().plan!, planVersion: 2 } })));
+      server.on(`POST /api/tasks/${ids.taskA}/approve-plan`, conflict(), accepted());
+      await show(<TaskScreen />);
+      await connect();
+      await fireEvent.press(await screen.findByRole('button', { name: 'Approve plan' }));
+      expect(await screen.findByText('The task changed. The screen shows the new state now.')).toBeOnTheScreen();
+      expect(await screen.findByText('Plan version 2, 2 subtasks')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve plan' }));
+      await waitFor(() => expect(controlPosts('approve-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('approve-plan');
+      expect(first!.body).toEqual({ planVersion: 1 });
+      expect(second!.body).toEqual({ planVersion: 2 });
+      const keys = [first!, second!].map((request) => request.headers.get('Idempotency-Key'));
+      expect(keys.every((key) => Id.safeParse(key).success)).toBe(true);
+      expect(keys[0]).not.toBe(keys[1]);
+      await waitFor(() => expect(screen.queryByText('The task changed. The screen shows the new state now.')).toBeNull());
+    });
+
+    it('makes a new key for the same action after a 409, because the server answered it', async () => {
+      server.on(taskRoute, json(200, detail()), json(200, detail({ rev: 2 })));
+      server.on(`POST /api/tasks/${ids.taskA}/approve-plan`, conflict(), accepted());
+      await show(<TaskScreen />);
+      await connect();
+      await fireEvent.press(await screen.findByRole('button', { name: 'Approve plan' }));
+      expect(await screen.findByText('The task changed. The screen shows the new state now.')).toBeOnTheScreen();
+      await waitFor(() => expect(server.requests.filter((request) => request.path === `/api/tasks/${ids.taskA}`)).toHaveLength(2));
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve plan' }));
+      await waitFor(() => expect(controlPosts('approve-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('approve-plan');
+      expect(second!.body).toEqual(first!.body);
+      expect(second!.headers.get('Idempotency-Key')).not.toBe(first!.headers.get('Idempotency-Key'));
+    });
+
+    it('rejects the plan only with a reason, and shows a refused action', async () => {
+      server.on(taskRoute, json(200, detail()));
+      server.on(`POST /api/tasks/${ids.taskA}/reject-plan`, json(400, { type: 'about:blank', title: 'Bad', status: 400, code: 'validation_failed' }));
+      await show(<TaskScreen />);
+      await connect();
+      await fireEvent.press(await screen.findByRole('button', { name: 'Reject plan' }));
+      expect(screen.getByRole('button', { name: 'Reject and end the task' })).toBeDisabled();
+      await fireEvent.changeText(screen.getByLabelText('Reason for the rejection'), ' Too long. ');
+      await fireEvent.press(screen.getByRole('button', { name: 'Reject and end the task' }));
+      expect(await screen.findByText('The server did not accept this action.')).toBeOnTheScreen();
+      expect(controlPosts('reject-plan')[0]!.body).toEqual({ planVersion: 1, reason: 'Too long.' });
+      server.on(`POST /api/tasks/${ids.taskA}/reject-plan`, accepted());
+      await fireEvent.press(screen.getByRole('button', { name: 'Reject and end the task' }));
+      await waitFor(() => expect(controlPosts('reject-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('reject-plan');
+      expect(second!.body).toEqual(first!.body);
+      expect(second!.headers.get('Idempotency-Key')).not.toBe(first!.headers.get('Idempotency-Key'));
+    });
+
+    it('opens the editor only while the plan waits for approval, and closes it when the task moves on', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      expect(await screen.findByTestId('plan-editor')).toBeOnTheScreen();
+      await sendDetail(socket, 11, detail({ rev: 2, status: 'running', runId: ids.taskC }));
+      await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+      expect(screen.queryByRole('button', { name: 'Approve plan' })).toBeNull();
+    });
+
+    it('says so when a new plan version comes during an edit, and loads it on request', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      await fireEvent.changeText(await screen.findByLabelText('Title of subtask 1'), 'My draft');
+      const next = detail({ rev: 2 }).plan!;
+      await sendDetail(socket, 11, detail({ rev: 2, plan: { planVersion: 2, subtasks: [{ ...next.subtasks[0]!, title: 'Server facts' }, next.subtasks[1]!] } }));
+      expect(await screen.findByText('The plan changed on the server while you edited it.')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Save plan' })).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Edit the new plan' }));
+      expect(await screen.findByText('Edit plan version 2')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Title of subtask 1')).toHaveProp('value', 'Server facts');
+    });
+
+    it('edits the plan: changes a title, adds a subtask, refuses a cycle, and sends the full plan with no estimates', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      server.on(`POST /api/tasks/${ids.taskA}/edit-plan`, accepted());
+      await show(<TaskScreen />);
+      await connect();
+      expect(await screen.findByText('Edit plan version 1')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Title of subtask 1'), 'Facts and figures');
+      await fireEvent.press(screen.getByRole('checkbox', { name: 'After Summary' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save plan' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('The subtasks wait for each other in a loop. Remove one of the Starts after choices.');
+      expect(controlPosts('edit-plan')).toHaveLength(0);
+      await fireEvent.press(screen.getByRole('checkbox', { name: 'After Summary' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Add subtask' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save plan' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Each subtask needs a title and instructions.');
+      await fireEvent.changeText(screen.getByLabelText('Title of subtask 3'), 'Check');
+      await fireEvent.changeText(screen.getByLabelText('Instructions for subtask 3'), 'Check the summary.');
+      await fireEvent.press(screen.getAllByRole('radio', { name: 'writer' })[2]!);
+      await fireEvent.press(screen.getAllByRole('checkbox', { name: 'After Summary' }).at(-1)!);
+      await fireEvent.press(screen.getByRole('button', { name: 'Move Check up' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save plan' }));
+      await waitFor(() => expect(controlPosts('edit-plan')).toHaveLength(1));
+      const body = controlPosts('edit-plan')[0]!.body as { planVersion: number; subtasks: Record<string, unknown>[] };
+      expect(body.planVersion).toBe(1);
+      expect(body.subtasks.map((item) => item.title)).toEqual(['Facts and figures', 'Check', 'Summary']);
+      const added = body.subtasks[1]!;
+      expect(Id.safeParse(added.subtaskId).success).toBe(true);
+      expect(added).toMatchObject({ agentId: agentIds[1], dependsOn: [s2], needsApproval: false, instructions: 'Check the summary.' });
+      expect(body.subtasks.some((item) => 'estimatedCostMicroUsd' in item || 'estimatedDurationMs' in item)).toBe(false);
+      expect(await screen.findByRole('button', { name: 'Approve plan' })).toBeOnTheScreen();
+    });
+
+    it('applies task notices by rev, shows the live text of the running call, reads the output of a done subtask and the result', async () => {
+      const running = detail({
+        status: 'running',
+        runId: ids.taskC,
+        rev: 2,
+        currentCall: null,
+        subtasks: [state(s1, 'running', { callId: ids.taskB, startedAt: '2026-11-01T10:01:00.000Z' }), state(s2, 'waiting')] as never,
+      });
+      server.on(taskRoute, json(200, detail()));
+      server.on(`GET /api/tasks/${ids.taskA}/subtasks/${s1}/output`, json(200, { taskId: ids.taskA, runId: ids.taskC, subtaskId: s1, text: 'All the facts.' }));
+      server.on(`GET /api/tasks/${ids.taskA}/output`, json(200, { taskId: ids.taskA, runId: ids.taskC, text: 'The final week plan.' }));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      await screen.findByText('Plan version 1, 2 subtasks');
+      await sendDetail(socket, 11, running);
+      expect(await screen.findByLabelText('Facts. Running. Agent researcher. Try 1')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Running. Approval required. Cost $0.00')).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeOnTheScreen();
+      await act(async () => socket.receive({ type: 'delta', taskId: ids.taskA, callId: ids.taskB, attempt: 1, i: 0, text: 'Some ' }));
+      await act(async () => socket.receive({ type: 'delta', taskId: ids.taskA, callId: ids.taskB, attempt: 1, i: 1, text: 'facts' }));
+      expect(screen.getByLabelText('Live output: Some facts')).toBeOnTheScreen();
+      await sendDetail(socket, 12, { ...running, rev: 1, title: 'Old rev' });
+      expect(screen.queryByText('Old rev')).toBeNull();
+      await sendDetail(socket, 13, {
+        ...running,
+        rev: 3,
+        currentCall: { callId: ids.taskC, kind: 'aggregate' },
+        subtasks: [state(s1, 'done', { callId: ids.taskB, startedAt: '2026-11-01T10:01:00.000Z', endedAt: '2026-11-01T10:02:00.000Z', inputTokens: 10, outputTokens: 20, costMicroUsd: 1_500 }), state(s2, 'queued')] as never,
+      });
+      expect(await screen.findByLabelText('Output: All the facts.')).toBeOnTheScreen();
+      expect(screen.queryByLabelText('Live output: Some facts')).toBeNull();
+      expect(screen.getByLabelText('The orchestrator writes the result: No text yet')).toBeOnTheScreen();
+      expect(screen.getByLabelText(/Facts\. Done\. Agent researcher\. Try 1\. 10 tokens in, 20 tokens out\. Cost \$0\.0015/)).toBeOnTheScreen();
+      expect(screen.getByText('Timeline')).toBeOnTheScreen();
+      await sendDetail(socket, 14, { ...running, rev: 4, status: 'completed', currentCall: null, subtasks: [state(s1, 'done'), state(s2, 'done')] as never });
+      expect(await screen.findByLabelText('Result: The final week plan.')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+      expect(screen.queryByRole('switch', { name: 'Auto-run this task' })).toBeNull();
+    });
+
+    it('resolves a checkpoint only while its subtask waits for approval, and keeps the key after a network error', async () => {
+      const checkpoint = { checkpointId: ids.taskC, subtaskId: s2, reason: 'Approval needed for Summary', status: 'open', openedAt: '2026-11-01T10:03:00.000Z' };
+      const base = { status: 'running' as const, runId: ids.taskC, checkpoints: [checkpoint] as never };
+      server.on(taskRoute, json(200, detail({ ...base, subtasks: [state(s1, 'done'), state(s2, 'queued')] as never })));
+      server.on(`POST /api/tasks/${ids.taskA}/resolve-checkpoint`, new TypeError('Network request failed'), accepted());
+      await show(<TaskScreen />);
+      const socket = await connect();
+      await screen.findByText('Plan version 1, 2 subtasks');
+      expect(screen.queryByText('Approval needed for Summary')).toBeNull();
+      await sendDetail(socket, 11, detail({ ...base, rev: 2, subtasks: [state(s1, 'done'), state(s2, 'awaiting_approval')] as never }));
+      expect(await screen.findByText('Approval needed for Summary')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Comment, optional'), 'Keep it short.');
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve' }));
+      expect(await screen.findByText('Not sent. Check the connection and try again.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(controlPosts('resolve-checkpoint')).toHaveLength(2));
+      const [first, second] = controlPosts('resolve-checkpoint');
+      expect(first!.body).toEqual({ checkpointId: ids.taskC, decision: 'approved', comment: 'Keep it short.' });
+      expect(second!.headers.get('Idempotency-Key')).toBe(first!.headers.get('Idempotency-Key'));
+    });
+
+    it('pauses, cancels the run after a confirm, retries and reassigns a failed subtask, and changes the mode', async () => {
+      server.on(taskRoute, json(200, detail({ status: 'running', runId: ids.taskC, subtasks: [state(s1, 'failed', { reason: 'The model gave no output.' }), state(s2, 'waiting')] as never })));
+      for (const name of ['pause-run', 'cancel-run', 'retry-subtask', 'reassign-subtask', 'set-task-mode']) server.on(`POST /api/tasks/${ids.taskA}/${name}`, accepted());
+      await show(<TaskScreen />);
+      await connect();
+      expect(await screen.findByText('The model gave no output.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Pause' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel run' }));
+      expect(controlPosts('cancel-run')).toHaveLength(0);
+      await fireEvent.press(screen.getByRole('button', { name: 'Yes, cancel the run' }));
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Retry subtask' })[0]!);
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Change agent' })[0]!);
+      expect(screen.getByRole('button', { name: 'Save agent' })).toBeDisabled();
+      await fireEvent.press(screen.getByRole('radio', { name: 'writer' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save agent' }));
+      await fireEvent.press(screen.getByRole('switch', { name: 'Auto-run this task' }));
+      await waitFor(() => expect(controlPosts('set-task-mode')).toHaveLength(1));
+      expect(controlPosts('pause-run')[0]!.body).toEqual({});
+      expect(controlPosts('cancel-run')[0]!.body).toEqual({});
+      expect(controlPosts('retry-subtask')[0]!.body).toEqual({ subtaskId: s1 });
+      expect(controlPosts('reassign-subtask')[0]!.body).toEqual({ subtaskId: s1, agentId: agentIds[1] });
+      expect(controlPosts('set-task-mode')[0]!.body).toEqual({ mode: 'auto' });
+      const keys = new Set(posts().map((request) => request.headers.get('Idempotency-Key')));
+      expect(keys.size).toBe(5);
+    });
+
+    it('opens the task from the task list', async () => {
+      await show(<Tasks />);
+      const socket = await connect();
+      await receive(socket, 11, task(ids.taskA, 1, 'Plan the week'));
+      await fireEvent.press(await screen.findByRole('button', { name: /^Plan the week\. Submitted/ }));
+      expect(router.push).toHaveBeenCalledWith({ pathname: '/task/[id]', params: { id: ids.taskA } });
+    });
+
+    it('shows an error for a task that does not load, and reads it again from the retry button', async () => {
+      server.on(taskRoute, json(404, { type: 'about:blank', title: 'Not Found', status: 404, code: 'not_found' }), json(200, detail()));
+      await show(<TaskScreen />);
+      await connect();
+      expect(await screen.findByText('The task did not load.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('Plan version 1, 2 subtasks')).toBeOnTheScreen();
+    });
+  });
+
+  describe('Plan preview and reply in the chat', () => {
+    const owner = { role: 'owner' as const, messageId: ids.taskB, text: 'Plan my week', intent: 'new_task' as const, taskId: ids.taskA, createdAt: '2026-11-01T10:00:00.000Z', rev: 2, asOf: 1 };
+    const agent = { role: 'agent' as const, messageId: ids.taskC, taskId: ids.taskA, text: 'Plan version 1, 2 subtasks: 1. Facts 2. Summary The plan waits for your approval.', createdAt: '2026-11-01T10:01:00.000Z', rev: 1, asOf: 2 };
+
+    beforeEach(() => {
+      server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 3, 'Plan the week', '2026-11-01T10:00:00.000Z', 'awaiting_approval')], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [agent, owner], headSeq: 10 }));
+      server.on('GET /api/agents', json(200, { items: [{ agentId: agentIds[0], name: 'researcher', enabled: true, rev: 1, asOf: 1 }], headSeq: 1 }));
+      server.on(`GET /api/tasks/${ids.taskA}`, json(200, detail()));
+    });
+
+    it('subscribes the task later, reads its detail after subscribed, and approves the plan from the chat', async () => {
+      server.on(`POST /api/tasks/${ids.taskA}/approve-plan`, json(202, { taskId: ids.taskA, version: 4 }));
+      await show(<Chat />);
+      const socket = await connect();
+      await waitFor(() => expect(socket.sent.at(-1)).toEqual({ type: 'subscribe', topics: [`task:${ids.taskA}`] }));
+      expect(server.requests.filter((request) => request.path === `/api/tasks/${ids.taskA}`)).toHaveLength(0);
+      await act(async () => socket.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 11 }));
+      expect(await screen.findByText('Plan for Plan the week, version 1')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Summary. Agent unknown. After Facts. Estimate $0.02. About 2 min. Needs your approval before it starts')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve plan' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ planVersion: 1 });
+    });
+
+    it('replies to a task with its taskId, turns off New task while it replies, and can cancel the reply', async () => {
+      server.on(postRoute, json(202, { conversationId, messageId: ids.session, intent: 'steer', taskId: ids.taskA }));
+      await show(<Chat />);
+      const socket = await connect();
+      await receive(socket, 11, task(ids.taskA, 4, 'Plan the week', '2026-11-01T10:00:00.000Z', 'running'));
+      await fireEvent.press((await screen.findAllByRole('button', { name: 'Reply to this task' }))[0]!);
+      expect(screen.getByText('Your next message goes to the task: Plan the week')).toBeOnTheScreen();
+      expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel reply' }));
+      expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Reply to this task' })[0]!);
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Use English only.');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
+      expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
+      expect(screen.getByRole('switch', { name: 'New task' })).toBeEnabled();
+    });
+
+    it('shows Reply only for a clarifying, running or paused task, from the task list status before a stale detail', async () => {
+      await show(<Chat />);
+      const socket = await connect();
+      await act(async () => socket.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 11 }));
+      await screen.findByText('Plan for Plan the week, version 1');
+      expect(screen.queryByRole('button', { name: 'Reply to this task' })).toBeNull();
+      const replies = () => screen.queryAllByRole('button', { name: 'Reply to this task' });
+      for (const [seq, status, shown] of [
+        [11, 'clarifying', true],
+        [12, 'blocked', false],
+        [13, 'paused', true],
+        [14, 'planning', false],
+        [15, 'running', true],
+      ] as const) {
+        await receive(socket, seq, task(ids.taskA, seq, 'Plan the week', '2026-11-01T10:00:00.000Z', status));
+        expect([status, replies().length > 0]).toEqual([status, shown]);
+      }
+      await act(async () => socket.receive({ type: 'notice', seq: 16, topic: `task:${ids.taskA}`, docId: ids.taskA, rev: 5, data: detail({ rev: 5, status: 'running', runId: ids.taskC }) }));
+      await receive(socket, 17, task(ids.taskA, 20, 'Plan the week', '2026-11-01T10:00:00.000Z', 'completed'));
+      expect(replies()).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: 'Open task' })).toBeNull();
+    });
+
+    it('never sends newTask together with a reply taskId', async () => {
+      server.on(postRoute, json(202, { conversationId, messageId: ids.session, intent: 'steer', taskId: ids.taskA }));
+      function Sender() {
+        const { send } = useLive();
+        return <Button label="Probe send" onPress={() => send('Use English only.', true, ids.taskA)} />;
+      }
+      await show(<Sender />);
+      await connect();
+      await fireEvent.press(screen.getByRole('button', { name: 'Probe send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
     });
   });
 

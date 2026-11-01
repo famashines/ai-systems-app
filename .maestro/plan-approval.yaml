@@ -1,0 +1,56 @@
+appId: com.famashines.ai
+name: "Plan preview, approval and task detail. NOT RUN: does not fit the local system of M1-05 yet, see README Maestro for what is missing"
+env:
+  USERNAME: owner
+  PASSWORD: owner
+---
+- runScript:
+    file: run-id.js
+- launchApp:
+    clearState: true
+    stopApp: true
+- tapOn: "Sign in"
+- tapOn:
+    text: "Use without an account"
+    optional: true
+- tapOn:
+    text: "No thanks"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "username"
+    timeout: 30000
+- tapOn:
+    id: "username"
+- inputText: ${USERNAME}
+- tapOn:
+    id: "password"
+- inputText: ${PASSWORD}
+- tapOn:
+    id: "kc-login"
+- extendedWaitUntil:
+    visible:
+      id: "chat-input"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: "Offline. You can send when the connection is back."
+    timeout: 30000
+- tapOn: "New task"
+- tapOn:
+    id: "chat-input"
+- inputText: "Write a short plan for ${output.online}"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Approve plan"
+    timeout: 120000
+- tapOn: "Approve plan"
+- tapOn: "Open task"
+- extendedWaitUntil:
+    visible:
+      id: "task-detail"
+    timeout: 15000
+- assertVisible: "Step 1"
+- extendedWaitUntil:
+    visible: "Completed"
+    timeout: 300000
+- assertVisible: "Result"
