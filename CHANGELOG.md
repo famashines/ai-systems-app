@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added (Play phone screenshots)
+
+- Four Google Play phone screenshots (1080 x 1920) in
+  `play-store-assets/phone-screenshots/`: chat, tasks, budget, settings.
+- `goldie/goldie.config.ts` and the argent flows `.argent/flows/store-0*.yaml`
+  that capture and frame them. docs/release.md has the steps.
+
 ### Changed (app name Fama AI)
 
 - The app name is `Fama AI` (launcher label, in-app text, lock screen

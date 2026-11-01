@@ -65,9 +65,50 @@ these steps in Play Console one time.
 | App name | `Fama AI` |
 | App icon | `play-store-assets/app-icon-512.png` |
 | Feature graphic | `play-store-assets/feature-graphic.png` |
+| Phone screenshots | `play-store-assets/phone-screenshots/01-chat.png` to `04-settings.png` (1080 x 1920) |
 
-`python3 scripts/build-logo-assets.py` makes both graphics from
-`logo-master/` (see `logo-master/SPEC.md`). Do not edit them by hand.
+`python3 scripts/build-logo-assets.py` makes the icon and the feature
+graphic from `logo-master/` (see `logo-master/SPEC.md`). Do not edit them
+by hand. Tablet screenshots are not necessary: Play needs 2 phone or tablet
+screenshots, and 4 of 1080 px or more for promotion.
+
+### Phone screenshots
+
+goldie (`goldie/goldie.config.ts`) runs the argent flows in
+`.argent/flows/store-0*.yaml` on the `Pixel_10_Pro_Store` emulator against
+the live server, then frames the captures. The chat flow sends one real
+task (less than 0.0001 USD).
+
+1. Build the release APK in this clone:
+   `npx expo prebuild --platform android --no-install`, then
+   `cd android && ./gradlew :app:assembleRelease -PreactNativeArchitectures=x86_64`.
+2. Put the owner login in `.argent/secrets.env` (gitignored), mode 600:
+   ```
+   FAMA_USER=<user name>
+   FAMA_PASSWORD=<password>
+   ```
+   Link it for the argent tool server:
+   `ln -s "$PWD/.argent/secrets.env" ~/.argent/secrets.env`.
+3. Prepare the emulator:
+   ```
+   adb shell locksettings set-pin 1111
+   adb shell settings put secure stylus_handwriting_enabled 0
+   adb shell svc power stayon true
+   adb shell pm revoke app.taseen android.permission.POST_NOTIFICATIONS
+   ```
+   The PIN removes the "no screen lock" warning from Settings. With
+   stylus handwriting on, the field taps start handwriting and the
+   password can go into the user name field. The last line removes the
+   Taseen icons from the status bar.
+4. Change the chat text in `store-01-chat.yaml`, so the Tasks list does
+   not repeat a task. Then:
+   ```
+   export GOLDIE_CONFIG=$PWD/goldie/goldie.config.ts
+   npx -y goldie@0 capture && npx -y goldie@0 frame && npx -y goldie@0 verify
+   cp goldie/out/screenshots/pixel-10-pro/en-US/0*.png play-store-assets/phone-screenshots/
+   ```
+5. Undo step 3: `adb shell pm grant app.taseen android.permission.POST_NOTIFICATIONS`,
+   `adb shell svc power stayon false`, `adb shell locksettings clear --old 1111`.
 
 ### Rename from ai.famashines
 

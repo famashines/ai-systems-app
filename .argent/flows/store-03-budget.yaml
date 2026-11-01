@@ -1,0 +1,28 @@
+steps:
+  - launch: com.famashines.ai
+  - echo: Start each scene logged out. goldie keeps the app between scenes, and a logged-in cold start shows the app lock (the emulator has PIN 1111). The path is the release APK of the main clone (docs/release.md, Phone screenshots).
+  - tool: reinstall-app
+    args: { bundleId: com.famashines.ai, appPath: /home/yahya/Documents/famashines/products/ai-systems/apps/ai-systems-app/android/app/build/outputs/apk/release/app-release.apk }
+  - launch: com.famashines.ai
+  - await: { visible: { text: Sign in with your famashines account. } }
+  - echo: The Sign in button. The title above it has the same text, so the tap uses the button centre from describe.
+  - tap: { x: 0.5, y: 0.609 }
+  - echo: The Keycloak page can take more than 10 seconds to load on the emulator network.
+  - await: { visible: { id: username }, timeout: 30000 }
+  - tap: { id: username }
+  - tool: keyboard
+    args: { text: "{{secret:FAMA_USER}}" }
+  - echo: Tab moves the focus to the password field. The emulator needs stylus handwriting off (adb shell settings put secure stylus_handwriting_enabled 0), or field taps start handwriting and the focus stays on the username.
+  - tool: keyboard
+    args: { key: tab }
+  - wait: 500
+  - tool: keyboard
+    args: { text: "{{secret:FAMA_PASSWORD}}" }
+  - tool: keyboard
+    args: { key: enter }
+  - await: { visible: { id: chat-input }, timeout: 30000 }
+  - echo: Let the first screen settle, or the tab tap can come before the tab bar takes input.
+  - await: { idle: true, timeout: 9000 }
+  - tap: { text: Budget }
+  - await: { visible: { text: Monthly cap } }
+  - await: { idle: true }
