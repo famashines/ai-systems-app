@@ -74,7 +74,7 @@
   "money.under": "under {amount}",
   "tabs.budget": "Budget",
   "chat.newTask": "New task",
-  "chat.newTaskHint": "When on, the next message starts a new task. When off, a message goes to the running task.",
+  "chat.newTaskHint": "In this version, a message to a running task is refused. Turn on New task to start a new task with the next message.",
   "chat.newTaskOn": "The next message starts a new task.",
   "chat.reply": "Agent: {text}",
   "chat.replyCost": "Agent: {text}. Cost {cost}",
@@ -106,5 +106,7 @@
   "budget.invalid": "Write an amount from 0 to 1000000 USD, for example 5.00.",
   "budget.softAbove": "The soft cap must not be above the monthly cap.",
   "budget.failed": "The cap is not saved. Try again.",
-  "budget.rejected": "The server did not accept this cap."
+  "budget.rejected": "The server did not accept this cap.",
+  "budget.read": "Amount: {amount}",
+  "budget.grouping": "A dot or comma with exactly three digits after it is not clear. Write 1000 for one thousand USD, or 1.00 for one USD."
 }

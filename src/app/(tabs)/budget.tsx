@@ -7,12 +7,12 @@ import { LiveBar } from '@/components/live-bar';
 import { AppText, Button, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
 import * as api from '@/lib/api';
-import { formatUsd, parseUsd, usdText } from '@/lib/money';
+import { formatUsd, formatUsdExact, parseUsd, usdText } from '@/lib/money';
 import { useLive } from '@/state/live';
 import { useSettings } from '@/state/settings';
 import { radius, spacing, touchTarget, type } from '@/theme';
 
-type Save = 'idle' | 'saving' | 'saved' | Extract<Key, 'budget.invalid' | 'budget.softAbove' | 'budget.failed' | 'budget.rejected'>;
+type Save = 'idle' | 'saving' | 'saved' | Extract<Key, 'budget.invalid' | 'budget.grouping' | 'budget.softAbove' | 'budget.failed' | 'budget.rejected'>;
 
 function NoCap() {
   const { t, colors } = useSettings();
@@ -53,8 +53,9 @@ function Month({ month }: { month: BudgetMonthV1 }) {
 }
 
 function Field({ label, value, onChange, testID }: { label: string; value: string; onChange: (text: string) => void; testID: string }) {
-  const { colors } = useSettings();
+  const { t, colors, language } = useSettings();
   const { online } = useLive();
+  const read = value.trim() ? parseUsd(value) : null;
   return (
     <View style={styles.field}>
       <AppText variant="label" color="onSurfaceVariant">
@@ -70,6 +71,11 @@ function Field({ label, value, onChange, testID }: { label: string; value: strin
         accessibilityState={{ disabled: !online }}
         style={[styles.input, type.body, { color: colors.onSurface, borderColor: colors.outline, backgroundColor: colors.surfaceContainer }]}
       />
+      {typeof read === 'number' ? (
+        <AppText testID={`${testID}-read`} variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite">
+          {t('budget.read', { amount: formatUsdExact(language, read) })}
+        </AppText>
+      ) : null}
     </View>
   );
 }
@@ -91,6 +97,7 @@ function CapForm({ month }: { month: BudgetMonthV1 | null }) {
   const submit = async () => {
     const hardCap = parseUsd(hard);
     const softCap = soft.trim() ? parseUsd(soft) : undefined;
+    if (hardCap === 'grouping' || softCap === 'grouping') return setSave('budget.grouping');
     if (hardCap === null || softCap === null) return setSave('budget.invalid');
     if (softCap !== undefined && softCap > hardCap) return setSave('budget.softAbove');
     key.current ??= Crypto.randomUUID();

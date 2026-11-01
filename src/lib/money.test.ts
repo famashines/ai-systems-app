@@ -1,4 +1,4 @@
-import { formatUsd, parseUsd, usdText } from '@/lib/money';
+import { formatUsd, formatUsdExact, parseUsd, usdText } from '@/lib/money';
 
 it.each([
   [0, '$0.00'],
@@ -24,6 +24,9 @@ it.each([
   ['5', 5_000_000],
   ['5.5', 5_500_000],
   ['5,25', 5_250_000],
+  ['1,5', 1_500_000],
+  ['1.0000', 1_000_000],
+  ['1,50', 1_500_000],
   [' 0.000001 ', 1],
   ['.5', 500_000],
   ['12.', 12_000_000],
@@ -41,8 +44,19 @@ it.each([
   [1, '0.000001'],
   [5_000_000, '5'],
   [5_250_000, '5.25'],
+  [1_234_000, '1.2340'],
   [1_000_000_000_000, '1000000'],
 ])('writes %i micro-USD as the input text %s and reads it back', (micro, text) => {
   expect(usdText(micro)).toBe(text);
   expect(parseUsd(text)).toBe(micro);
+});
+
+it.each(['1,000', '1.000', '0.050', ' 12,345 ', '.123'])('refuses %j: a separator with exactly three digits can be a thousands separator', (text) => {
+  expect(parseUsd(text)).toBe('grouping');
+});
+
+it('shows the read amount with all its decimals', () => {
+  expect(formatUsdExact('en', 1)).toBe('$0.000001');
+  expect(formatUsdExact('en', 5_000_000)).toBe('$5.00');
+  expect(formatUsdExact('de', 1_500_000)).toMatch(/^1,50\s\$$/);
 });

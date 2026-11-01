@@ -74,7 +74,7 @@
   "money.under": "unter {amount}",
   "tabs.budget": "Budget",
   "chat.newTask": "Neue Aufgabe",
-  "chat.newTaskHint": "Wenn an, beginnt die nächste Nachricht eine neue Aufgabe. Wenn aus, geht eine Nachricht an die laufende Aufgabe.",
+  "chat.newTaskHint": "In dieser Version wird eine Nachricht an eine laufende Aufgabe abgelehnt. Schalten Sie Neue Aufgabe ein, damit die nächste Nachricht eine neue Aufgabe beginnt.",
   "chat.newTaskOn": "Die nächste Nachricht beginnt eine neue Aufgabe.",
   "chat.reply": "Agent: {text}",
   "chat.replyCost": "Agent: {text}. Kosten {cost}",
@@ -106,5 +106,7 @@
   "budget.invalid": "Schreiben Sie einen Betrag von 0 bis 1000000 USD, zum Beispiel 5,00.",
   "budget.softAbove": "Die Warngrenze darf nicht über der Monatsgrenze liegen.",
   "budget.failed": "Die Grenze ist nicht gespeichert. Versuchen Sie es erneut.",
-  "budget.rejected": "Der Server hat diese Grenze nicht angenommen."
+  "budget.rejected": "Der Server hat diese Grenze nicht angenommen.",
+  "budget.read": "Betrag: {amount}",
+  "budget.grouping": "Ein Punkt oder Komma mit genau drei Ziffern danach ist nicht eindeutig. Schreiben Sie 1000 für tausend USD oder 1,00 für einen USD."
 }

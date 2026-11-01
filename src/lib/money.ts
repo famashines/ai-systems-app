@@ -9,9 +9,14 @@ export function formatUsd(language: Language, micro: number): string {
   return format.format(micro / microPerUsd);
 }
 
-export function parseUsd(text: string): number | null {
+export function formatUsdExact(language: Language, micro: number): string {
+  return new Intl.NumberFormat(language, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(micro / microPerUsd);
+}
+
+export function parseUsd(text: string): number | 'grouping' | null {
   const match = /^(\d{0,7})(?:[.,](\d{0,6}))?$/.exec(text.trim());
   if (!match || !(match[1] || match[2])) return null;
+  if (match[2]?.length === 3) return 'grouping';
   return Number(match[1] || '0') * microPerUsd + Number((match[2] ?? '').padEnd(6, '0'));
 }
 
@@ -20,5 +25,5 @@ export function usdText(micro: number): string {
     .padStart(6, '0')
     .replace(/0+$/, '');
   const whole = String(Math.floor(micro / microPerUsd));
-  return fraction ? `${whole}.${fraction}` : whole;
+  return fraction ? `${whole}.${fraction.length === 3 ? `${fraction}0` : fraction}` : whole;
 }
