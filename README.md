@@ -217,15 +217,16 @@ app                                api-gateway / socket-gateway
   conversation-hub decides: a task that waits for answers gets the
   message (answer), else a running task (steer), else it starts a new
   task.
-- Reply to a task: an agent reply of a task that has not ended, and each
-  plan card, have "Reply to this task". The composer then shows the task
-  title and "Cancel reply", the New task switch is off, and the next
-  message has the `taskId` of that task (`newTask: false`, no `mode`).
+- Reply to a task: an agent reply has "Reply to this task" only while
+  its task is `clarifying`, `running` or `paused` (the status of the task
+  list first, because a stored detail can be old after its topic is
+  unsubscribed). For other statuses the server refuses the reply, so the
+  button does not show. The composer then shows the task title and
+  "Cancel reply", the New task switch is off, and the next message has
+  the `taskId` of that task (`newTask: false`, no `mode`).
   conversation-hub makes it an `answer` for a `clarifying` task and a
-  `steer` for other tasks. Orchestration refuses a steer before the run
-  (the reason comes as a reply). So a reply to a plan or to a paused or
-  blocked task never starts a new task by mistake. To change a plan, use
-  the plan buttons.
+  `steer` for a running or paused task. To change a plan, use the plan
+  buttons.
 - Thread: `GET /api/conversations/<id>/messages?limit=50`, newest first,
   shown in an inverted list (newest at the bottom). Older pages use
   `before` = `createdAt` and `beforeId` = `messageId` of the last item of
@@ -310,11 +311,14 @@ Tasks list row / chat "Open task"  -->  /task/<taskId>
   task list status is `awaiting_approval` gets a plan card: each subtask
   with its agent, dependencies, estimated cost and time, and approval
   rule; Approve plan, Edit plan (opens the task screen in edit mode),
-  Reject plan (with a reason, required), Open task and Reply to this task.
+  Reject plan (with a reason, required) and Open task.
 - Edit plan: title, instructions, agent (enabled agents from
   `GET /api/agents`), "Starts after" (dependsOn), needs approval, move up
   or down, remove, add (a new `subtaskId` from `expo-crypto`). The app
-  drops the estimates; the server makes them again. Before it sends, the
+  drops the estimates; the server makes them again. A change of the agent
+  removes the `model` of that subtask, because orchestration refuses a
+  model that the agent does not use. The editor shows only while the task
+  is `awaiting_approval` with a plan. Before it sends, the
   app checks the plan with `PlanSubtasks` (1 to 20 subtasks, a title and
   instructions for each, no cycle). If a new plan version comes while you
   edit, the editor says so and loads the new plan on request.

@@ -2,6 +2,7 @@ import type { SubtaskStateV1, TaskStatus } from '@famashines/ai-systems-contract
 
 import {
   addSubtask,
+  canReply,
   changeSubtask,
   checkDraft,
   detailFromNotice,
@@ -57,6 +58,23 @@ describe('taskControls', () => {
     const { plan: _plan, ...noPlan } = detail({ status: 'awaiting_approval' });
     expect(taskControls(noPlan).approve).toBe(false);
   });
+});
+
+it.each([
+  ['clarifying', true],
+  ['running', true],
+  ['paused', true],
+  ['submitted', false],
+  ['planning', false],
+  ['awaiting_approval', false],
+  ['blocked', false],
+  ['completed', false],
+  ['failed', false],
+  ['cancelled', false],
+  ['rejected', false],
+  [undefined, false],
+] as const)('a reply to a %s task is %s', (status, allowed) => {
+  expect(canReply(status)).toBe(allowed);
 });
 
 describe('subtaskControls', () => {
@@ -151,6 +169,17 @@ describe('plan draft', () => {
     draft = removeSubtask(draft, s2!);
     expect(draft.find((item) => item.subtaskId === ids.taskC)!.dependsOn).toEqual([]);
     expect(toggleDependency(toggleDependency(draft, ids.taskC, s1!), ids.taskC, s1!)).toEqual(draft);
+  });
+
+  it('drops the model of a subtask when its agent changes, and keeps it for other changes', () => {
+    const draft = draftOf(base.map((item, index) => (index === 0 ? { ...item, model: 'openai/gpt-4.1-nano' } : item)));
+    expect(changeSubtask(draft, s1!, { title: 'Facts 2' })[0]!.model).toBe('openai/gpt-4.1-nano');
+    expect(changeSubtask(draft, s1!, { agentId: draft[0]!.agentId })[0]!.model).toBe('openai/gpt-4.1-nano');
+    const changed = changeSubtask(draft, s1!, { agentId: ids.taskC });
+    expect('model' in changed[0]!).toBe(false);
+    const checked = checkDraft(changed);
+    expect(checked.ok && 'model' in checked.subtasks[0]!).toBe(false);
+    expect(checked.ok && checked.subtasks[0]!.agentId).toBe(ids.taskC);
   });
 
   it('names the problem of a bad draft', () => {

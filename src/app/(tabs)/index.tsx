@@ -10,7 +10,7 @@ import type { Key } from '@/i18n';
 import { taskTextMax } from '@/lib/api';
 import type { ChatMessage } from '@/lib/chat';
 import { formatUsd } from '@/lib/money';
-import { endedStatuses } from '@/lib/task';
+import { canReply, endedStatuses } from '@/lib/task';
 import { useLive, type Message, type StreamRow } from '@/state/live';
 import { useSettings } from '@/state/settings';
 import { radius, spacing, touchTarget, type } from '@/theme';
@@ -20,7 +20,7 @@ type Reply = (taskId: string) => void;
 
 const openTask = (taskId: string, edit = false) => router.push({ pathname: '/task/[id]', params: edit ? { id: taskId, edit: '1' } : { id: taskId } });
 
-function PlanCard({ detail, onReply }: { detail: TaskDetailV1; onReply: Reply }) {
+function PlanCard({ detail }: { detail: TaskDetailV1 }) {
   const { t, colors } = useSettings();
   const plan = detail.plan;
   if (!plan) return null;
@@ -31,10 +31,7 @@ function PlanCard({ detail, onReply }: { detail: TaskDetailV1; onReply: Reply })
       </AppText>
       <PlanSummary subtasks={plan.subtasks} />
       <PlanActions detail={detail} onEdit={() => openTask(detail.taskId, true)} />
-      <View style={styles.actions}>
-        <Button label={t('chat.openTask')} variant="tonal" onPress={() => openTask(detail.taskId)} />
-        <Button label={t('chat.replyTo')} variant="tonal" onPress={() => onReply(detail.taskId)} />
-      </View>
+      <Button label={t('chat.openTask')} variant="tonal" onPress={() => openTask(detail.taskId)} />
     </View>
   );
 }
@@ -91,7 +88,7 @@ function Posted({ message, onReply }: { message: ChatMessage; onReply: Reply }) 
     );
   }
   const cost = message.costMicroUsd === undefined ? null : formatUsd(language, message.costMicroUsd);
-  const status = details[message.taskId]?.status ?? tasks.find((item) => item.taskId === message.taskId)?.status;
+  const status = tasks.find((item) => item.taskId === message.taskId)?.status ?? details[message.taskId]?.status;
   return (
     <View testID={`reply-${message.messageId}`} style={[styles.message, { backgroundColor: colors.surfaceContainer }]}>
       <View
@@ -109,7 +106,7 @@ function Posted({ message, onReply }: { message: ChatMessage; onReply: Reply }) 
       </View>
       {status === undefined || endedStatuses.has(status) ? null : (
         <View style={styles.actions}>
-          <Button label={t('chat.replyTo')} variant="tonal" onPress={() => onReply(message.taskId)} />
+          {canReply(status) ? <Button label={t('chat.replyTo')} variant="tonal" onPress={() => onReply(message.taskId)} /> : null}
           <Button label={t('chat.openTask')} variant="tonal" onPress={() => openTask(message.taskId)} />
         </View>
       )}
@@ -158,7 +155,7 @@ function Thread({ onReply }: { onReply: Reply }) {
           item.kind === 'pending' ? (
             <Pending message={item.message} />
           ) : item.kind === 'plan' ? (
-            <PlanCard detail={item.detail} onReply={onReply} />
+            <PlanCard detail={item.detail} />
           ) : item.kind === 'stream' ? (
             <Stream stream={item.stream} />
           ) : (

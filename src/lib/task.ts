@@ -6,6 +6,11 @@ export type Details = Record<string, TaskDetailV1>;
 
 export const endedStatuses = new Set<TaskStatus>(['completed', 'failed', 'cancelled', 'rejected']);
 const runStatuses = new Set<TaskStatus>(['running', 'paused', 'blocked']);
+const replyStatuses = new Set<TaskStatus>(['clarifying', 'running', 'paused']);
+
+export function canReply(status: TaskStatus | undefined): boolean {
+  return status !== undefined && replyStatuses.has(status);
+}
 const fixedSubtasks = new Set<SubtaskStateV1['status']>(['running', 'done', 'cancelled', 'skipped']);
 
 export function mergeDetail(details: Details, doc: TaskDetailV1): Details {
@@ -102,8 +107,13 @@ export function moveSubtask(draft: Draft[], subtaskId: string, by: -1 | 1): Draf
   return next;
 }
 
-export function changeSubtask(draft: Draft[], subtaskId: string, change: Partial<Omit<Draft, 'subtaskId'>>): Draft[] {
-  return draft.map((item) => (item.subtaskId === subtaskId ? { ...item, ...change } : item));
+export function changeSubtask(draft: Draft[], subtaskId: string, change: Partial<Omit<Draft, 'subtaskId' | 'model'>>): Draft[] {
+  return draft.map((item) => {
+    if (item.subtaskId !== subtaskId) return item;
+    const next: Draft = { ...item, ...change };
+    if (change.agentId !== undefined && change.agentId !== item.agentId) delete next.model;
+    return next;
+  });
 }
 
 export function toggleDependency(draft: Draft[], subtaskId: string, on: string): Draft[] {

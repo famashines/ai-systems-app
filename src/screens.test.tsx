@@ -15,10 +15,10 @@ import TaskScreen from '@/app/task/[id]';
 import { router } from 'expo-router';
 import { redirectSystemPath } from '@/app/+native-intent';
 import { LockScreen } from '@/components/lock-screen';
-import { StateView } from '@/components/ui';
+import { Button, StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
-import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
+import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs, useLive } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 import { agentIds, detail, FakeSocket, fakeServer, ids, installFakeSocket, json, subtaskIds, task } from '@/test-fakes';
@@ -859,6 +859,21 @@ describe('Live', () => {
       await waitFor(() => expect(screen.queryByText('The task changed. The screen shows the new state now.')).toBeNull());
     });
 
+    it('makes a new key for the same action after a 409, because the server answered it', async () => {
+      server.on(taskRoute, json(200, detail()), json(200, detail({ rev: 2 })));
+      server.on(`POST /api/tasks/${ids.taskA}/approve-plan`, conflict(), accepted());
+      await show(<TaskScreen />);
+      await connect();
+      await fireEvent.press(await screen.findByRole('button', { name: 'Approve plan' }));
+      expect(await screen.findByText('The task changed. The screen shows the new state now.')).toBeOnTheScreen();
+      await waitFor(() => expect(server.requests.filter((request) => request.path === `/api/tasks/${ids.taskA}`)).toHaveLength(2));
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve plan' }));
+      await waitFor(() => expect(controlPosts('approve-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('approve-plan');
+      expect(second!.body).toEqual(first!.body);
+      expect(second!.headers.get('Idempotency-Key')).not.toBe(first!.headers.get('Idempotency-Key'));
+    });
+
     it('rejects the plan only with a reason, and shows a refused action', async () => {
       server.on(taskRoute, json(200, detail()));
       server.on(`POST /api/tasks/${ids.taskA}/reject-plan`, json(400, { type: 'about:blank', title: 'Bad', status: 400, code: 'validation_failed' }));
@@ -870,6 +885,38 @@ describe('Live', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Reject and end the task' }));
       expect(await screen.findByText('The server did not accept this action.')).toBeOnTheScreen();
       expect(controlPosts('reject-plan')[0]!.body).toEqual({ planVersion: 1, reason: 'Too long.' });
+      server.on(`POST /api/tasks/${ids.taskA}/reject-plan`, accepted());
+      await fireEvent.press(screen.getByRole('button', { name: 'Reject and end the task' }));
+      await waitFor(() => expect(controlPosts('reject-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('reject-plan');
+      expect(second!.body).toEqual(first!.body);
+      expect(second!.headers.get('Idempotency-Key')).not.toBe(first!.headers.get('Idempotency-Key'));
+    });
+
+    it('opens the editor only while the plan waits for approval, and closes it when the task moves on', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      expect(await screen.findByTestId('plan-editor')).toBeOnTheScreen();
+      await sendDetail(socket, 11, detail({ rev: 2, status: 'running', runId: ids.taskC }));
+      await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+      expect(screen.queryByRole('button', { name: 'Approve plan' })).toBeNull();
+    });
+
+    it('says so when a new plan version comes during an edit, and loads it on request', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      await fireEvent.changeText(await screen.findByLabelText('Title of subtask 1'), 'My draft');
+      const next = detail({ rev: 2 }).plan!;
+      await sendDetail(socket, 11, detail({ rev: 2, plan: { planVersion: 2, subtasks: [{ ...next.subtasks[0]!, title: 'Server facts' }, next.subtasks[1]!] } }));
+      expect(await screen.findByText('The plan changed on the server while you edited it.')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Save plan' })).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Edit the new plan' }));
+      expect(await screen.findByText('Edit plan version 2')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Title of subtask 1')).toHaveProp('value', 'Server facts');
     });
 
     it('edits the plan: changes a title, adds a subtask, refuses a cycle, and sends the full plan with no estimates', async () => {
@@ -1038,7 +1085,8 @@ describe('Live', () => {
     it('replies to a task with its taskId, turns off New task while it replies, and can cancel the reply', async () => {
       server.on(postRoute, json(202, { conversationId, messageId: ids.session, intent: 'steer', taskId: ids.taskA }));
       await show(<Chat />);
-      await connect();
+      const socket = await connect();
+      await receive(socket, 11, task(ids.taskA, 4, 'Plan the week', '2026-11-01T10:00:00.000Z', 'running'));
       await fireEvent.press((await screen.findAllByRole('button', { name: 'Reply to this task' }))[0]!);
       expect(screen.getByText('Your next message goes to the task: Plan the week')).toBeOnTheScreen();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
@@ -1051,6 +1099,42 @@ describe('Live', () => {
       expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
       expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeEnabled();
+    });
+
+    it('shows Reply only for a clarifying, running or paused task, from the task list status before a stale detail', async () => {
+      await show(<Chat />);
+      const socket = await connect();
+      await act(async () => socket.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 11 }));
+      await screen.findByText('Plan for Plan the week, version 1');
+      expect(screen.queryByRole('button', { name: 'Reply to this task' })).toBeNull();
+      const replies = () => screen.queryAllByRole('button', { name: 'Reply to this task' });
+      for (const [seq, status, shown] of [
+        [11, 'clarifying', true],
+        [12, 'blocked', false],
+        [13, 'paused', true],
+        [14, 'planning', false],
+        [15, 'running', true],
+      ] as const) {
+        await receive(socket, seq, task(ids.taskA, seq, 'Plan the week', '2026-11-01T10:00:00.000Z', status));
+        expect([status, replies().length > 0]).toEqual([status, shown]);
+      }
+      await act(async () => socket.receive({ type: 'notice', seq: 16, topic: `task:${ids.taskA}`, docId: ids.taskA, rev: 5, data: detail({ rev: 5, status: 'running', runId: ids.taskC }) }));
+      await receive(socket, 17, task(ids.taskA, 20, 'Plan the week', '2026-11-01T10:00:00.000Z', 'completed'));
+      expect(replies()).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: 'Open task' })).toBeNull();
+    });
+
+    it('never sends newTask together with a reply taskId', async () => {
+      server.on(postRoute, json(202, { conversationId, messageId: ids.session, intent: 'steer', taskId: ids.taskA }));
+      function Sender() {
+        const { send } = useLive();
+        return <Button label="Probe send" onPress={() => send('Use English only.', true, ids.taskA)} />;
+      }
+      await show(<Sender />);
+      await connect();
+      await fireEvent.press(screen.getByRole('button', { name: 'Probe send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
     });
   });
 

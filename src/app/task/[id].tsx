@@ -1,4 +1,4 @@
-import { Id, type PlanSubtask, type TaskDetailV1 } from '@famashines/ai-systems-contracts';
+import { Id, type CheckpointDecision, type PlanSubtask, type TaskDetailV1 } from '@famashines/ai-systems-contracts';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -90,6 +90,7 @@ function Checkpoint({ detail, subtaskId }: { detail: TaskDetailV1; subtaskId: st
   const { t, language } = useSettings();
   const { run, busy, outcome, online } = useControl(detail.taskId);
   const [comment, setComment] = useState('');
+  const [decision, setDecision] = useState<CheckpointDecision>('approved');
   const open = openCheckpoint(detail, subtaskId);
   const latest = detail.checkpoints.find((checkpoint) => checkpoint.subtaskId === subtaskId);
   if (!latest) return null;
@@ -100,7 +101,11 @@ function Checkpoint({ detail, subtaskId }: { detail: TaskDetailV1; subtaskId: st
       </AppText>
     );
   }
-  const decide = (decision: 'approved' | 'refused') => void run('resolve-checkpoint', { checkpointId: open.checkpointId, decision, ...(comment.trim() ? { comment: comment.trim() } : {}) });
+  const decide = (choice: CheckpointDecision) => {
+    setDecision(choice);
+    void run('resolve-checkpoint', { checkpointId: open.checkpointId, decision: choice, ...(comment.trim() ? { comment: comment.trim() } : {}) });
+  };
+  const deciding = busy === 'resolve-checkpoint';
   return (
     <View style={styles.block} accessibilityLiveRegion="polite">
       <AppText variant="label">{t('checkpoint.title')}</AppText>
@@ -112,8 +117,8 @@ function Checkpoint({ detail, subtaskId }: { detail: TaskDetailV1; subtaskId: st
       ) : null}
       <Field label={t('checkpoint.comment')} value={comment} onChange={setComment} max={1000} />
       <View style={styles.row}>
-        <Button label={t('checkpoint.approve')} busy={busy === 'resolve-checkpoint'} disabled={!online || busy !== null} onPress={() => decide('approved')} />
-        <Button label={t('checkpoint.refuse')} variant="tonal" disabled={!online || busy !== null} onPress={() => decide('refused')} />
+        <Button label={t('checkpoint.approve')} busy={deciding && decision === 'approved'} disabled={!online || busy !== null} onPress={() => decide('approved')} />
+        <Button label={t('checkpoint.refuse')} variant="tonal" busy={deciding && decision === 'refused'} disabled={!online || busy !== null} onPress={() => decide('refused')} />
       </View>
       <OutcomeText outcome={outcome} />
     </View>
@@ -218,7 +223,7 @@ function Detail({ detail, editing, setEditing }: { detail: TaskDetailV1; editing
           <AppText variant="label" accessibilityRole="header">
             {t('plan.heading', { version: String(detail.plan.planVersion), n: String(subtasks.length) })}
           </AppText>
-          {editing ? <PlanEditor detail={detail} onClose={() => setEditing(false)} /> : <PlanActions detail={detail} onEdit={() => setEditing(true)} />}
+          {editing && taskControls(detail).approve ? <PlanEditor detail={detail} onClose={() => setEditing(false)} /> : <PlanActions detail={detail} onEdit={() => setEditing(true)} />}
           {levels(subtasks).map((row, index) => (
             <View key={index} style={styles.block}>
               <AppText variant="label" accessibilityRole="header">
