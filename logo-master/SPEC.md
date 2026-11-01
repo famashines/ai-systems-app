@@ -73,7 +73,8 @@ equilateral. Use the exact values: `16 sqrt3 = 27.7128...`.
 ## 5. Colour
 
 All colours are tokens of `src/theme.ts`. `scripts/build-logo-assets.py`
-stops if `geometry.py` and `theme.ts` do not agree. If a token changes,
+stops if `geometry.py` and `theme.ts` do not agree, and `--check` stops
+if an asset is not up to date with `geometry.py`. If a token changes,
 change `COLOURS` in `geometry.py`, then build the assets again.
 
 | Name in `geometry.py` | Token in `theme.ts` | Hex |
@@ -179,7 +180,7 @@ PASS smallest gap between two nodes = 17.00 >= 4 x edge
 PASS mark box = (-36.213, -40.5, 36.213, 24.5)
 PASS area centroid = (0, 0) (three-fold symmetry)
 PASS optical centre = midpoint of box centre and area centroid = (0, -4)
-PASS reach from the optical centre = 42.68 fits the master view box half size 48
+PASS reach from the optical centre = 42.68 fits the master view box half size 48 with a margin of 4
 PASS fama-ai-mark.svg is up to date with geometry.py
 PASS fama-ai-icon.svg is up to date with geometry.py
 

@@ -32,7 +32,7 @@ check(abs(area) < 1e-9, 'area centroid = (0, 0) (three-fold symmetry)')
 centre = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
 optical = ((centre[0] + g.CENTRE[0]) / 2, (centre[1] + g.CENTRE[1]) / 2)
 check(math.dist(optical, g.OPTICAL) < 1e-9, f'optical centre = midpoint of box centre and area centroid = ({g.f(optical[0])}, {g.f(optical[1])})')
-check(g.reach() <= g.VIEW / 2 - 4, f'reach from the optical centre = {g.reach():.2f} fits the master view box half size {g.VIEW // 2}')
+check(g.reach() <= g.VIEW / 2 - 4, f'reach from the optical centre = {g.reach():.2f} fits the master view box half size {g.VIEW // 2} with a margin of 4')
 for name, text in (('fama-ai-mark.svg', g.mark_svg()), ('fama-ai-icon.svg', g.icon_svg())):
     path = here / name
     check(path.exists() and path.read_text() == text, f'{name} is up to date with geometry.py')

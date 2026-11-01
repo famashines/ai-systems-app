@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 
 import cairo
-from PIL import Image, ImageDraw
+import tempfile
+
+from PIL import Image, ImageChops, ImageDraw
 
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root / 'logo-master'))
@@ -16,6 +18,11 @@ store = root / 'play-store-assets'
 name = 'Fama AI'
 adaptive_safe = 66 / 108 * 512
 splash_safe = 192 / 288 * 1152 / 2
+
+
+def need(ok, *detail):
+    if not ok:
+        raise SystemExit(f'FAIL {detail}')
 
 
 def hex_rgb(value):
@@ -57,7 +64,7 @@ def rgba(path):
     return path
 
 
-def write():
+def write(images=images, store=store):
     return [
         render(images / 'icon.png', 1024, opaque=True, background=True, mark=(8, None, g.ON_BADGE)),
         render(images / 'adaptive-icon-background.png', 1024, opaque=True, background=True),
@@ -72,27 +79,27 @@ def write():
 
 def check_png(path, size, mode, colours=None, safe=None, badge=False):
     image = Image.open(path)
-    assert image.size == size, (path, image.size)
-    assert image.mode == mode, (path, image.mode)
+    need(image.size == size, (path, image.size))
+    need(image.mode == mode, (path, image.mode))
     if mode == 'RGBA' and badge:
-        assert image.getextrema()[3] == (255, 255), path
+        need(image.getextrema()[3] == (255, 255), path)
     if badge:
         pixels = image.load()
-        assert pixels[0, 0][:3] == hex_rgb(g.BADGE[0]), (path, pixels[0, 0])
-        assert pixels[size[0] - 1, size[1] - 1][:3] == hex_rgb(g.BADGE[1]), path
+        need(pixels[0, 0][:3] == hex_rgb(g.BADGE[0]), (path, pixels[0, 0]))
+        need(pixels[size[0] - 1, size[1] - 1][:3] == hex_rgb(g.BADGE[1]), path)
     if safe:
         pixels = image.load()
         width, height = size
         for y in range(height):
             for x in range(width):
                 if pixels[x, y][3]:
-                    assert math.hypot(x + 0.5 - width / 2, y + 0.5 - height / 2) <= safe, (path, x, y)
+                    need(math.hypot(x + 0.5 - width / 2, y + 0.5 - height / 2) <= safe, (path, x, y))
     if colours:
         solid = {p[:3] for _, p in image.getcolors(1 << 22) if p[3] == 255}
         brand = [hex_rgb(c) for c in colours]
         low, high = [tuple(f(c[i] for c in brand) for i in range(3)) for f in (min, max)]
-        assert set(brand) <= solid, (path, solid)
-        assert all(low[i] - 1 <= p[i] <= high[i] + 1 for p in solid for i in range(3)), (path, solid)
+        need(set(brand) <= solid, (path, solid))
+        need(all(low[i] - 1 <= p[i] <= high[i] + 1 for p in solid for i in range(3)), (path, solid))
 
 
 def tokens():
@@ -111,21 +118,37 @@ def tokens():
 
 
 def check_config():
-    assert tokens() == g.COLOURS, ('logo-master/geometry.py COLOURS differ from src/theme.ts', tokens(), g.COLOURS)
+    need(tokens() == g.COLOURS, ('logo-master/geometry.py COLOURS differ from src/theme.ts', tokens(), g.COLOURS))
     expo = json.loads((root / 'app.json').read_text())['expo']
-    assert expo['name'] == name, expo['name']
-    assert expo['primaryColor'] == g.COLOURS['primary']
-    assert expo['android']['adaptiveIcon']['backgroundColor'] == g.COLOURS['primary']
+    need(expo['name'] == name, expo['name'])
+    need(expo['primaryColor'] == g.COLOURS['primary'])
+    need(expo['android']['adaptiveIcon']['backgroundColor'] == g.COLOURS['primary'])
     splash = next(p[1] for p in expo['plugins'] if isinstance(p, list) and p[0] == 'expo-splash-screen')
-    assert splash['backgroundColor'] == g.COLOURS['surface']
-    assert splash['dark']['backgroundColor'] == g.COLOURS['darkSurface']
-    assert splash['imageWidth'] * 4 == 1152, splash['imageWidth']
+    need(splash['backgroundColor'] == g.COLOURS['surface'])
+    need(splash['dark']['backgroundColor'] == g.COLOURS['darkSurface'])
+    need(splash['imageWidth'] * 4 == 1152, splash['imageWidth'])
+
+
+def same(a, b):
+    first, second = Image.open(a), Image.open(b)
+    if first.size != second.size or first.mode != second.mode:
+        return False
+    return ImageChops.difference(first.convert('RGBA'), second.convert('RGBA')).getbbox(alpha_only=False) is None
+
+
+def check_fresh():
+    with tempfile.TemporaryDirectory() as scratch:
+        for fresh in write(Path(scratch) / 'images', Path(scratch) / 'store'):
+            committed = (images if fresh.parent.name == 'images' else store) / fresh.name
+            need(committed.exists() and same(fresh, committed),
+                 f'{committed.relative_to(root)} is not up to date with logo-master/geometry.py; run the build')
 
 
 def check():
     check_config()
-    assert g.reach() * 7 <= adaptive_safe, 'adaptive mark leaves the 66 dp safe circle'
-    assert g.reach() * 7 <= splash_safe, 'splash mark leaves the 192 dp circle'
+    check_fresh()
+    need(g.reach() * 7 <= adaptive_safe, 'adaptive mark leaves the 66 dp safe circle')
+    need(g.reach() * 7 <= splash_safe, 'splash mark leaves the 192 dp circle')
     check_png(images / 'icon.png', (1024, 1024), 'RGB', badge=True)
     check_png(images / 'adaptive-icon-background.png', (1024, 1024), 'RGB', badge=True)
     check_png(images / 'adaptive-icon-foreground.png', (1024, 1024), 'RGBA', colours=g.ON_BADGE, safe=adaptive_safe)
@@ -134,7 +157,7 @@ def check():
     check_png(images / 'splash-icon-dark.png', (1152, 1152), 'RGBA', colours=(g.ON_DARK,), safe=splash_safe)
     check_png(store / 'app-icon-512.png', (512, 512), 'RGBA', badge=True)
     check_png(store / 'feature-graphic.png', (1024, 500), 'RGB', badge=True)
-    assert all(p.stat().st_size < 1024 * 1024 for p in store.glob('*.png')), 'a Play Store graphic is 1 MB or larger'
+    need(all(p.stat().st_size < 1024 * 1024 for p in store.glob('*.png')), 'a Play Store graphic is 1 MB or larger')
 
 
 if __name__ == '__main__':

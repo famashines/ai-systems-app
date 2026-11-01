@@ -74,7 +74,7 @@ these steps in Play Console one time.
 Version 1.0.0 (version code 2) is in internal testing with the old
 launcher label `ai.famashines` and the old icon. Change the app name in
 the store listing (above), and upload the two graphics. The next release
-(1.0.1, section 5) brings the new launcher label and icon to the devices.
+(section 5) brings the new launcher label and icon to the devices.
 
 The package `com.famashines.ai` does not change. Google Play does not let
 you change it after the first upload.

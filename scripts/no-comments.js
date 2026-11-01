@@ -3,7 +3,7 @@ const path = require('path');
 const ts = require('typescript');
 
 const repo = path.resolve(__dirname, '..');
-const roots = ['src', 'scripts', '.github/workflows'];
+const roots = ['src', 'scripts', 'logo-master', '.github/workflows'];
 const skipDirs = new Set(['node_modules', '__pycache__']);
 const keep = /^(\/\/|\/\*)\s*(eslint-|eslint\s|global\s|@ts-(expect-error|ignore|nocheck)|\/ <reference|@license|SPDX-License-Identifier|!)/;
 const hashKeep = /^#\s*(\/\/\/( script)?$|@generated|@end|noqa|type:\s*ignore|pyright:|yaml-language-server:)/;
