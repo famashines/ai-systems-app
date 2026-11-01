@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed (app name)
+
+- The in-app text uses the name `ai.famashines` (app name, lock screen
+  title and unlock prompt) in English, German and Urdu.
+
 ### Added (first Google Play release)
 
 - The app name is `ai.famashines`, version 1.0.0.
