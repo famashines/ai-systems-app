@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSettings } from '@/state/settings';
@@ -13,12 +13,14 @@ export function AppText({ variant = 'body', color = 'onSurface', style, ...props
 export function Screen({ title, children }: { title: string; children: ReactNode }) {
   const { colors } = useSettings();
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: colors.surface }]}>
-      <AppText variant="title" accessibilityRole="header" style={styles.title}>
-        {title}
-      </AppText>
-      {children}
-    </SafeAreaView>
+    <KeyboardAvoidingView behavior="padding" style={[styles.fill, { backgroundColor: colors.surface }]}>
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.screen}>
+        <AppText variant="title" accessibilityRole="header" style={styles.title}>
+          {title}
+        </AppText>
+        {children}
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -76,6 +78,7 @@ export function StateView(props: StateProps) {
 }
 
 const styles = StyleSheet.create({
+  fill: { flex: 1 },
   screen: { flex: 1, paddingHorizontal: spacing.md, gap: spacing.md },
   title: { paddingTop: spacing.md },
   button: {

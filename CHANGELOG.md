@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed (keyboard and permissions)
+
+- On Android the keyboard covered the chat input and the Send button.
+  With edge-to-edge, `adjustResize` does not make the window smaller.
+  `Screen` now puts a `KeyboardAvoidingView` (`padding`) around each
+  screen, so the content moves above the keyboard.
+- `android.permission.USE_FINGERPRINT` is blocked. The app needs
+  Android 10 or later (`minSdkVersion` 29). On these versions
+  `expo-local-authentication` uses `androidx.biometric`
+  (`BiometricPrompt`), which needs `USE_BIOMETRIC` only.
+  `USE_FINGERPRINT` is deprecated since API level 28.
+
 ### Changed (app name Fama AI)
 
 - The app name is `Fama AI` (launcher label, in-app text, lock screen
