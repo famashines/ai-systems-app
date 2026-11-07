@@ -142,7 +142,7 @@ function Thread({ onReply }: { onReply: Reply }) {
   if (rows.length === 0) {
     if (threadLoad === 'error') return <StateView kind="error" title={t('chat.error')} retryLabel={t('common.retry')} onRetry={reloadThread} />;
     if (threadLoad === 'loading' && !threadLoaded) return <StateView kind="loading" title={t('chat.loading')} />;
-    return <StateView kind="empty" title={t('chat.empty')} />;
+    return <StateView kind="empty" mark title={t('chat.empty')} />;
   }
   return (
     <>
@@ -177,14 +177,15 @@ function Thread({ onReply }: { onReply: Reply }) {
 
 export default function Chat() {
   const { t, colors } = useSettings();
-  const { online, send, tasks, details } = useLive();
+  const { online, send, newChat, tasks, details, models } = useLive();
   const [text, setText] = useState('');
   const [newTask, setNewTask] = useState(false);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const replyTitle = replyTo ? (details[replyTo]?.title ?? tasks.find((item) => item.taskId === replyTo)?.title ?? t('task.title')) : null;
-  const canSend = online && text.trim() !== '';
   const choice = useChoice();
+  const needsModel = replyTo === null && choice.model === undefined;
+  const canSend = online && text.trim() !== '' && !needsModel;
 
   const submit = () => {
     if (!canSend) return;
@@ -198,8 +199,9 @@ export default function Chat() {
     setNewTask(false);
   };
   const startNew = () => {
+    newChat();
     setReplyTo(null);
-    setNewTask(true);
+    setNewTask(false);
     input.current?.focus();
   };
 
@@ -207,7 +209,7 @@ export default function Chat() {
     <Screen
       title={t('tabs.chat')}
       start={<Menu current="/" />}
-      end={<IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.startNewTask')} disabled={!online} onPress={startNew} />}
+      end={<IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} disabled={!online} onPress={startNew} />}
     >
       <LiveBar />
       <Thread onReply={reply} />
@@ -217,6 +219,11 @@ export default function Chat() {
             {t('chat.offline')}
           </AppText>
         )}
+        {online && needsModel && models.load !== 'loading' ? (
+          <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite">
+            {t('chat.modelNeeded')}
+          </AppText>
+        ) : null}
         {replyTitle ? (
           <View style={styles.row}>
             <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite" style={styles.shrink}>

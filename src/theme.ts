@@ -1,42 +1,42 @@
 import type { TextStyle } from 'react-native';
 
 export const lightColors = {
-  surface: '#FAF9F5',
-  surfaceContainer: '#FFFFFF',
-  surfaceContainerHigh: '#F0EEE6',
-  onSurface: '#1F1E1D',
-  onSurfaceVariant: '#5E5D59',
-  primary: '#B5532F',
+  surface: '#F8F9FB',
+  surfaceContainer: '#ECEFF4',
+  surfaceContainerHigh: '#E2E6ED',
+  onSurface: '#1A1C20',
+  onSurfaceVariant: '#44474F',
+  primary: '#2F5BB7',
   onPrimary: '#FFFFFF',
-  primaryContainer: '#F7E4DA',
-  onPrimaryContainer: '#5A2410',
+  primaryContainer: '#D9E2FF',
+  onPrimaryContainer: '#001A43',
   error: '#B3261E',
   onError: '#FFFFFF',
   errorContainer: '#F9DEDC',
   onErrorContainer: '#410E0B',
-  outline: '#87857D',
-  outlineVariant: '#E5E2D9',
+  outline: '#74777F',
+  outlineVariant: '#C4C6D0',
   scrim: '#00000066',
 };
 
 export type Colors = typeof lightColors;
 
 export const darkColors: Colors = {
-  surface: '#262624',
-  surfaceContainer: '#30302E',
-  surfaceContainerHigh: '#3A3936',
-  onSurface: '#F0EEE6',
-  onSurfaceVariant: '#BFBCB2',
-  primary: '#E8916D',
-  onPrimary: '#2A1208',
-  primaryContainer: '#4D2D20',
-  onPrimaryContainer: '#F8D9CB',
+  surface: '#111318',
+  surfaceContainer: '#1D2024',
+  surfaceContainerHigh: '#282A2F',
+  onSurface: '#E2E2E9',
+  onSurfaceVariant: '#C4C6D0',
+  primary: '#B0C6FF',
+  onPrimary: '#002D6E',
+  primaryContainer: '#284777',
+  onPrimaryContainer: '#D9E2FF',
   error: '#FFB4AB',
   onError: '#690005',
   errorContainer: '#93000A',
   onErrorContainer: '#FFDAD6',
-  outline: '#8F8C83',
-  outlineVariant: '#454440',
+  outline: '#8E9099',
+  outlineVariant: '#44474F',
   scrim: '#00000099',
 };
 
@@ -47,6 +47,8 @@ export const radius = { sm: 8, md: 12, lg: 16, xl: 24, full: 999 } as const;
 export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)' } as const;
 
 export const touchTarget = 48;
+
+export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
 
 export const readingWidth = 720;
 

@@ -3,6 +3,7 @@ name: "Plan preview, approval and task detail. NOT RUN: does not fit the local s
 env:
   USERNAME: owner
   PASSWORD: owner
+  MODEL: "OpenAI: GPT-4.1 Nano"
 ---
 - runScript:
     file: run-id.js
@@ -35,6 +36,19 @@ env:
 - extendedWaitUntil:
     notVisible: "Offline. You can send when the connection is back."
     timeout: 30000
+- tapOn:
+    id: "model-chip"
+- extendedWaitUntil:
+    visible:
+      id: "model-list"
+    timeout: 30000
+- tapOn:
+    id: "model-search"
+- inputText: "${MODEL}"
+- tapOn:
+    text: "${MODEL}"
+    index: 1
+- tapOn: "Done"
 - tapOn: "New task"
 - tapOn:
     id: "chat-input"

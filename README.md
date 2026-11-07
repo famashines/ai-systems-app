@@ -302,8 +302,9 @@ the session ends) removes `live.tasks` and keeps the settings.
 
 ## Model and effort
 
-The owner can choose the model and the reasoning effort of a new task.
-Auto (the default) sends nothing: each agent uses its own model chain.
+The owner chooses the model and the reasoning effort of a new task.
+There is no Auto. Send stays off until a model is chosen. A reply to a
+task needs no model.
 
 ```
 app                                   api-gateway -> ai-proxy
@@ -315,30 +316,29 @@ app                                   api-gateway -> ai-proxy
 ```
 
 - The model chip in the composer shows a short model name and, on a
-  second line, the effort, for example "GPT-5" and "High", or only
-  "Auto". The short name is the text after "Provider: ". When that text
+  second line, the effort, for example "GPT-5" and "High". With no model
+  it shows "Choose model", and the composer says that a model is needed. The short name is the text after "Provider: ". When that text
   is longer than 12 characters, the chip shows only its last two words
   ("Anthropic: Claude Opus 5.5" shows as "Opus 5.5"). The picker list
   and the TalkBack label have the full name. TalkBack reads "Model <name>, effort <effort>" and a hint.
 - The chip opens the picker (a modal with a title): a search field (it
-  filters by name or id), the radio group "Model" (Auto and the list, in a
+  filters by name or id), the radio group "Model" (the list, in a
   `FlatList`, because the list can have about 400 models) and the radio
-  group "Reasoning effort". The effort group shows only when the model has
-  efforts, and only the efforts of that model, highest first. Its Auto
-  row shows the default of the model, for example "Auto (High)". "none"
-  shows as "Off". Done, the back button or a tap on the dimmed area
-  closes the picker.
+  group "Reasoning effort". The effort group is a rail of nodes and edges,
+  from low to high. It shows only when the model has efforts, and only the
+  efforts of that model. It starts at the default of the model. "none"
+  shows as "Off". Done, the back button, a tap on the dimmed area
+  or the handle at the top (drag it down or tap it) closes the picker.
 - When the read fails, the picker shows "The model list did not load."
   with Try again.
 - A model change keeps the effort in use only when the new model has it,
-  else the effort goes back to Auto. A saved effort that is not in use
-  (because the saved model is not in the list) does not come back. A choice of Auto for the model also sets
-  the effort to Auto.
+  else the effort goes back to the default of the new model. A saved effort that is not in use
+  (because the saved model is not in the list) does not come back.
 - The choice is kept in the settings (sqlite cache key `settings`) and
   stays after sign-out.
-- A saved model that is not in the list shows as Auto, and the app sends
-  no model and no effort. A saved effort that the model does not have is
-  not sent. Until the list loads, the chip shows Auto.
+- A saved model that is not in the list shows as "Choose model". A saved
+  effort that the model does not have is not sent. Until the list loads,
+  the app uses the saved model, and the chip shows the last part of its id.
 - The app sends `model` and `effort` only in a message with no `taskId`.
   A reply to a task never has them, and the chip is off while you reply.
   When conversation-hub makes a message without a `taskId` an answer or

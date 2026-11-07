@@ -104,6 +104,7 @@ type Value = {
   reloadThread: () => void;
   send: (text: string, newTask: boolean, replyTo?: string, choice?: api.Choice) => void;
   retry: (key: string) => void;
+  newChat: () => void;
   budget: Budget;
   reloadBudget: () => void;
   details: Details;
@@ -181,11 +182,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     setThreadLoad('loading');
     try {
       const page = await api.getThread(id);
-      if (mine !== run.current) return;
+      if (mine !== run.current || id !== conversation.current) return;
       dispatchChat({ type: 'page', items: page.items, first: true });
       setThreadLoad('idle');
     } catch {
-      if (mine === run.current) setThreadLoad('error');
+      if (mine === run.current && id === conversation.current) setThreadLoad('error');
     }
   };
   const loadBudget = async (): Promise<void> => {
@@ -491,12 +492,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       api
         .getThread(id, cursor)
         .then((page) => {
-          if (mine !== run.current) return;
+          if (mine !== run.current || id !== conversation.current) return;
           dispatchChat({ type: 'page', items: page.items, first: false });
           setThreadMore('idle');
         })
         .catch(() => {
-          if (mine === run.current) setThreadMore('error');
+          if (mine === run.current && id === conversation.current) setThreadMore('error');
         });
     },
     send: (text, newTask, replyTo, choice) => {
@@ -513,6 +514,18 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       if (!message || !online || message.state !== 'failed') return;
       patch(key, { state: 'sending', slow: false });
       void submit(key, message.text, message.newTask, message.replyTo, message.choice);
+    },
+    newChat: () => {
+      if (!online) return;
+      const fresh = Crypto.randomUUID();
+      conversation.current = fresh;
+      setConversationId(fresh);
+      void setItem(conversationKey, fresh).catch(() => {});
+      dispatchChat({ type: 'clear' });
+      dispatchChat({ type: 'page', items: [], first: true });
+      setMessages([]);
+      setThreadLoad('idle');
+      setThreadMore('idle');
     },
     budget,
     reloadBudget: () => void loadBudget(),
