@@ -1,6 +1,7 @@
 import { Id } from '@famashines/ai-systems-contracts';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { reloadAppAsync } from 'expo';
+import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useLocales } from 'expo-localization';
 import type { ReactElement } from 'react';
@@ -21,7 +22,7 @@ import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
 import { modelsRetryMs } from '@/lib/api';
 import { lockAfterMs } from '@/lib/lock';
-import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs, useLive } from '@/state/live';
+import { cachedTasksMax, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs, useLive } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 import { agentIds, detail, FakeSocket, fakeServer, ids, installFakeSocket, json, subtaskIds, task } from '@/test-fakes';
@@ -51,7 +52,8 @@ jest.mock('@/lib/auth', () => {
   };
 });
 
-jest.mock('expo-crypto', () => ({ randomUUID: () => jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID() }));
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+const realUuid = () => jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID();
 
 function Probe() {
   const { status, locked } = useSession();
@@ -74,7 +76,7 @@ beforeEach(async () => {
   await removeItem('rtlReload');
   await removeItem('lock.reloadAt');
   await removeItem(tasksCacheKey);
-  await setItem(conversationKey, conversationId);
+  jest.mocked(Crypto.randomUUID).mockReset().mockImplementation(realUuid).mockReturnValueOnce(conversationId);
   installFakeSocket();
   jest.mocked(auth.getAccessToken).mockImplementation(() => new Promise(() => {}));
   jest.mocked(auth.refresh).mockResolvedValue(true);
@@ -545,10 +547,9 @@ describe('Live', () => {
       expect(Object.fromEntries(threadCalls()[2]!.query)).toEqual({ limit: '50', before: older.createdAt, beforeId: ids.taskB });
       await act(async () => fireEvent(screen.getByTestId('chat-list'), 'onEndReached'));
       expect(threadCalls()).toHaveLength(3);
-      expect((await getItem(conversationKey))?.value).toBe(conversationId);
     });
 
-    it('clears the thread, live text, sent messages and budget on sign-out, and keeps the conversation id for the next sign-in', async () => {
+    it('clears the thread, live text, sent messages and budget on sign-out, and starts a new conversation on the next sign-in', async () => {
       server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 1, 'Old task')], headSeq: 10 }));
       server.on(threadRoute, json(200, { items: [owner(ids.taskB, 'Old thread', 2, ids.taskA)], headSeq: 10 }));
       server.on('GET /api/budget', json(200, { month: '2026-11', capMicroUsd: 5_000_000, spentMicroUsd: 0, reservedMicroUsd: 0, remainingMicroUsd: 5_000_000, overCapMicroUsd: 0, rev: 1, asOf: 1 }));
@@ -578,20 +579,19 @@ describe('Live', () => {
       for (const text of ['Old thread', 'Old stream', 'Pending text', 'Month 2026-11']) expect(screen.queryByText(text)).toBeNull();
       expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
       expect(screen.getByLabelText('Loading the budget')).toBeOnTheScreen();
-      expect((await getItem(conversationKey))?.value).toBe(conversationId);
+      expect(Crypto.randomUUID).toHaveBeenCalledTimes(3);
     });
 
-    it('makes and keeps a conversation id when the device has none', async () => {
-      await removeItem(conversationKey);
+    it('opens a new conversation each time the app starts', async () => {
+      const fresh = 'e5555555-5555-4555-8555-555555555555';
+      jest.mocked(Crypto.randomUUID).mockReset().mockImplementation(realUuid).mockReturnValueOnce(fresh);
       await show(<Chat />);
       const socket = await socketNumber(1);
       await act(async () => {
         socket.open();
         socket.receive({ type: 'welcome', sessionId: ids.session, headSeq: 10, heartbeatMs: 20_000 });
       });
-      const made = (await getItem<string>(conversationKey))?.value;
-      expect(Id.safeParse(made).success).toBe(true);
-      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${made}`] });
+      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${fresh}`] });
     });
 
     it('shows the error state of the thread and reads again from the retry button', async () => {
@@ -635,7 +635,7 @@ describe('Live', () => {
       expect(screen.queryByText('Old thread')).toBeNull();
       expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
       expect(screen.getByRole('switch', { name: 'New task' })).not.toBeChecked();
-      const fresh = (await getItem<string>(conversationKey))?.value;
+      const fresh = jest.mocked(Crypto.randomUUID).mock.results.at(-1)?.value as string;
       expect(Id.safeParse(fresh).success).toBe(true);
       expect(fresh).not.toBe(conversationId);
       expect(socket.sent).toContainEqual({ type: 'unsubscribe', topics: [`conversation:${conversationId}`] });
@@ -871,7 +871,7 @@ describe('Live', () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
       await connect();
-      expect(labels(screen.getByTestId('composer'))).toEqual(['New task', 'Message', 'Choose model', 'Send']);
+      expect(labels(screen.getByTestId('composer'))).toEqual(['Message', 'New task', 'Choose model', 'Send']);
       const toggle = screen.getByRole('switch', { name: 'New task' });
       expect(toggle).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
       expect(toggle).toHaveProp('accessibilityHint', 'When it is off, a message goes to the task that waits for your answer or runs now. Turn on New task to start a new task with the next message.');
@@ -1151,7 +1151,7 @@ describe('Live', () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
       await connect();
-      expect(labels(screen.getByTestId('composer'))).toEqual(['نیا کام', 'پیغام', 'ماڈل چنیں', 'بھیجیں']);
+      expect(labels(screen.getByTestId('composer'))).toEqual(['پیغام', 'نیا کام', 'ماڈل چنیں', 'بھیجیں']);
       await waitFor(() => expect(modelCalls()).toHaveLength(1));
       await fireEvent.press(chip('ماڈل چنیں'));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
