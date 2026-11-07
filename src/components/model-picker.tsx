@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
   },
   handle: { height: touchTarget, alignItems: 'center', justifyContent: 'center' },
   pill: { width: 36, height: rail.edge, borderRadius: radius.full },
-  chip: { minHeight: touchTarget, minWidth: touchTarget, maxWidth: 104, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.full, overflow: 'hidden' },
+  chip: { minHeight: touchTarget, minWidth: touchTarget, maxWidth: 160, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.full, overflow: 'hidden' },
   search: { minHeight: touchTarget, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.full, textAlign: 'auto' },
   row: { minHeight: touchTarget + spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
