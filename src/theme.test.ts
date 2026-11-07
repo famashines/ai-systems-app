@@ -22,6 +22,8 @@ const pairs: [Key, Key, number][] = [
   ['outline', 'surfaceContainer', 3],
   ['error', 'surfaceContainerHigh', 4.5],
   ['outline', 'surfaceContainerHigh', 3],
+  ['onSurface', 'primaryContainer', 4.5],
+  ['onSurfaceVariant', 'primaryContainer', 4.5],
 ];
 
 describe.each([['light', lightColors], ['dark', darkColors]] as const)('%s colours', (_name, colors) => {

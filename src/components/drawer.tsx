@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Animated, I18nManager, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText, Icon, IconButton, type IconName } from '@/components/ui';
+import { AppText, Icon, IconButton, Mark, type IconName } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { useLive } from '@/state/live';
 import { useSession } from '@/state/session';
@@ -58,7 +58,8 @@ export function Menu({ current }: { current: Section }) {
         >
           <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.fill}>
             <View style={styles.top}>
-              <AppText variant="title" accessibilityRole="header" style={styles.fill}>
+              <Mark size={40} />
+              <AppText variant="title" color="primary" accessibilityRole="header" style={styles.name}>
                 {t('app.name')}
               </AppText>
               <IconButton icon={{ ios: 'xmark', android: 'close', web: 'close' }} label={t('drawer.close')} onPress={close} />
@@ -75,10 +76,12 @@ export function Menu({ current }: { current: Section }) {
                     accessibilityState={{ selected }}
                     onPress={() => go(href)}
                     android_ripple={{ color: colors.outlineVariant }}
-                    style={[styles.row, { backgroundColor: selected ? colors.surfaceContainerHigh : 'transparent' }]}
+                    style={[styles.row, { backgroundColor: selected ? colors.primaryContainer : 'transparent' }]}
                   >
-                    <Icon name={icon} color={selected ? 'onSurface' : 'onSurfaceVariant'} />
-                    <AppText variant="label">{t(key)}</AppText>
+                    <Icon name={icon} color={selected ? 'onPrimaryContainer' : 'onSurfaceVariant'} />
+                    <AppText variant="label" color={selected ? 'onPrimaryContainer' : 'onSurface'}>
+                      {t(key)}
+                    </AppText>
                   </Pressable>
                 );
               })}
@@ -125,7 +128,8 @@ export function Menu({ current }: { current: Section }) {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   panel: { position: 'absolute', top: 0, bottom: 0, start: 0, width: drawerWidth, maxWidth: '85%', borderTopEndRadius: radius.lg, borderBottomEndRadius: radius.lg, overflow: 'hidden' },
-  top: { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingStart: spacing.md, paddingEnd: spacing.xs },
+  top: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 56, paddingStart: spacing.sm, paddingEnd: spacing.xs },
+  name: { flex: 1, fontWeight: '500' },
   list: { paddingHorizontal: spacing.sm, paddingBottom: spacing.lg, gap: spacing.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget, paddingHorizontal: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: spacing.sm, marginHorizontal: spacing.md },

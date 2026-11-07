@@ -1,6 +1,6 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import type { ReactNode } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSettings } from '@/state/settings';
@@ -9,6 +9,11 @@ import { radius, readingWidth, spacing, touchTarget, type, type Colors } from '@
 export function AppText({ variant = 'body', color = 'onSurface', style, ...props }: TextProps & { variant?: keyof typeof type; color?: keyof Colors }) {
   const { colors } = useSettings();
   return <Text {...props} style={[type[variant], { color: colors[color], textAlign: 'auto' }, style]} />;
+}
+
+export function Mark({ size }: { size: number }) {
+  const { dark } = useSettings();
+  return <Image testID="fama-mark" source={dark ? require('../../assets/images/mark-dark.png') : require('../../assets/images/mark-light.png')} importantForAccessibility="no" style={{ width: size, height: size }} />;
 }
 
 export type IconName = Extract<SymbolViewProps['name'], object>;
@@ -111,7 +116,7 @@ export function Card({ children, testID }: { children: ReactNode; testID?: strin
 
 type StateProps =
   | { kind: 'loading'; title: string }
-  | { kind: 'empty'; title: string; hint?: string }
+  | { kind: 'empty'; title: string; hint?: string; mark?: boolean }
   | { kind: 'error'; title: string; retryLabel: string; onRetry: () => void };
 
 export function StateView(props: StateProps) {
@@ -119,6 +124,7 @@ export function StateView(props: StateProps) {
   return (
     <View style={styles.state} accessibilityLiveRegion="polite" accessibilityRole={props.kind === 'error' ? 'alert' : undefined}>
       {props.kind === 'loading' ? <ActivityIndicator size="large" color={colors.primary} accessibilityLabel={props.title} /> : null}
+      {props.kind === 'empty' && props.mark ? <Mark size={96} /> : null}
       <AppText variant="body" color={props.kind === 'error' ? 'error' : 'onSurfaceVariant'} style={styles.center}>
         {props.title}
       </AppText>
