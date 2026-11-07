@@ -483,6 +483,8 @@ describe('Live', () => {
   });
 
   describe('Chat', () => {
+    beforeEach(() => setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-5', effort: null }));
+
     const owner = (messageId: string, text: string, rev = 1, taskId?: string, createdAt = '2026-11-01T10:00:00.000Z') => ({
       role: 'owner' as const,
       messageId,
@@ -523,7 +525,7 @@ describe('Live', () => {
       expect(screen.getByLabelText('Message')).toHaveProp('editable', false);
       expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Start a new task' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'New chat' })).toBeDisabled();
     });
 
     it('reads the thread after subscribed, keeps one conversation id, and reads older pages until an empty page', async () => {
@@ -615,7 +617,7 @@ describe('Live', () => {
       const post = posts()[0]!;
       const key = post.headers.get('Idempotency-Key')!;
       expect(Id.safeParse(key).success).toBe(true);
-      expect(post.body).toEqual({ text: 'Plan the week', newTask: false });
+      expect(post.body).toEqual({ text: 'Plan the week', newTask: false, model: 'openai/gpt-5' });
       await said(socket, 11, owner(ids.taskB, 'Plan the week'), key);
       expect(screen.getByText('Received')).toBeOnTheScreen();
       expect(screen.getAllByText('Plan the week')).toHaveLength(1);
@@ -624,15 +626,38 @@ describe('Live', () => {
       expect(screen.getAllByText('Plan the week')).toHaveLength(1);
     });
 
-    it('turns on the new task switch from the header action', async () => {
-      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+    it('starts a new conversation from the header action', async () => {
+      server.on(threadRoute, json(200, { items: [owner(ids.taskA, 'Old thread')], headSeq: 10 }));
+      await show(<Chat />);
+      const socket = await connect();
+      expect(await screen.findByText('Old thread')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
+      expect(screen.queryByText('Old thread')).toBeNull();
+      expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
+      expect(screen.getByRole('switch', { name: 'New task' })).not.toBeChecked();
+      const fresh = (await getItem<string>(conversationKey))?.value;
+      expect(Id.safeParse(fresh).success).toBe(true);
+      expect(fresh).not.toBe(conversationId);
+      expect(socket.sent).toContainEqual({ type: 'unsubscribe', topics: [`conversation:${conversationId}`] });
+      expect(socket.sent).toContainEqual({ type: 'subscribe', topics: [`conversation:${fresh}`] });
+      server.on(`POST /api/conversations/${fresh}/messages`, json(202, { conversationId: fresh, messageId: ids.taskB, intent: 'new_task' }));
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Another topic');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.path).toBe(`/api/conversations/${fresh}/messages`);
+      expect(posts()[0]!.body).toEqual({ text: 'Another topic', newTask: false, model: 'openai/gpt-5' });
+    });
+
+    it('does not show a late page of the old conversation in the new chat', async () => {
+      let answer = (_: Response) => {};
+      server.on(threadRoute, () => new Promise<Response>((resolve) => (answer = resolve)));
       await show(<Chat />);
       await connect();
-      expect(screen.getByRole('switch', { name: 'New task' })).not.toBeChecked();
-      await fireEvent.press(screen.getByRole('button', { name: 'Start a new task' }));
-      expect(screen.getByRole('switch', { name: 'New task' })).toBeChecked();
-      expect(screen.getByText('The next message starts a new task.')).toBeOnTheScreen();
-      expect(screen.getByPlaceholderText('Message Fama AI...')).toHaveProp('multiline', true);
+      await waitFor(() => expect(server.requests.some((request) => request.path === `/api/conversations/${conversationId}/messages`)).toBe(true));
+      await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
+      await act(async () => answer(json(200, { items: [owner(ids.taskA, 'Old thread')], headSeq: 10 })));
+      expect(screen.queryByText('Old thread')).toBeNull();
+      expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
     });
 
     it('sends newTask true once when the new task switch is on', async () => {
@@ -650,8 +675,8 @@ describe('Live', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
       await waitFor(() => expect(posts()).toHaveLength(2));
       expect(posts().map((request) => request.body)).toEqual([
-        { text: 'Another topic', newTask: true },
-        { text: 'Follow up', newTask: false },
+        { text: 'Another topic', newTask: true, model: 'openai/gpt-5' },
+        { text: 'Follow up', newTask: false, model: 'openai/gpt-5' },
       ]);
     });
 
@@ -846,15 +871,16 @@ describe('Live', () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
       await connect();
-      expect(labels(screen.getByTestId('composer'))).toEqual(['New task', 'Message', 'Model Auto, effort Auto', 'Send']);
+      expect(labels(screen.getByTestId('composer'))).toEqual(['New task', 'Message', 'Choose model', 'Send']);
       const toggle = screen.getByRole('switch', { name: 'New task' });
       expect(toggle).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
       expect(toggle).toHaveProp('accessibilityHint', 'When it is off, a message goes to the task that waits for your answer or runs now. Turn on New task to start a new task with the next message.');
       expect(screen.queryByText('New task')).toBeNull();
-      const model = chip('Model Auto, effort Auto');
+      const model = chip('Choose model');
       expect(model).toHaveProp('accessibilityHint', 'Opens the list of models and effort levels for the next new task.');
       expect(model).toHaveStyle({ minHeight: 48, minWidth: 48, borderRadius: 999 });
-      expect(model).toHaveTextContent('Auto');
+      expect(model).toHaveTextContent('Choose model');
+      expect(screen.getByText('Choose a model to send a message.')).toBeOnTheScreen();
       expect(screen.getByRole('button', { name: 'Send' })).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
       expect(screen.getByPlaceholderText('Message Fama AI...')).toBeOnTheScreen();
     });
@@ -885,9 +911,9 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       await waitFor(() => expect(modelCalls()).toHaveLength(1));
-      await fireEvent.press(chip('Model Auto, effort Auto'));
+      await fireEvent.press(chip('Choose model'));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
-      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
       expect(screen.getByRole('radio', { name: 'High', checked: false })).toBeOnTheScreen();
       await waitFor(async () => expect((await getItem<{ model: string; effort: null }>('settings'))?.value).toMatchObject({ model: 'openai/gpt-5', effort: null }));
     });
@@ -895,59 +921,83 @@ describe('Live', () => {
     it('turns the chip off while offline', async () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
-      expect(chip('Model Auto, effort Auto')).toBeDisabled();
+      expect(chip('Choose model')).toBeDisabled();
       await connect();
-      expect(chip('Model Auto, effort Auto')).toBeEnabled();
+      expect(chip('Choose model')).toBeEnabled();
     });
 
-    it('searches by name or id, shows only the efforts of the model, hides the effort for Auto and a model with no efforts, and keeps the choice', async () => {
+    it('searches by name or id, starts at the default effort of the model, orders efforts low to high, and keeps the choice', async () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
       await connect();
       await waitFor(() => expect(modelCalls()).toHaveLength(1));
-      await fireEvent.press(chip('Model Auto, effort Auto'));
+      await fireEvent.press(chip('Choose model'));
       expect(screen.getByRole('header', { name: 'Model and effort' })).toBeOnTheScreen();
       expect(screen.getByLabelText('Model')).toHaveProp('accessibilityRole', 'radiogroup');
-      expect(screen.getByRole('radio', { name: 'Auto', checked: true })).toBeOnTheScreen();
+      expect(screen.queryByRole('radio', { name: 'Auto' })).toBeNull();
+      expect(screen.queryByRole('radio', { checked: true })).toBeNull();
       expect(screen.queryByLabelText('Reasoning effort')).toBeNull();
       const rows = () => screen.getAllByRole('radio').map((row) => row.props.accessibilityLabel);
-      expect(rows()).toEqual(['Auto', 'DeepSeek: DeepSeek V4', 'OpenAI: GPT-5', 'OpenAI: GPT-4.1 Nano']);
+      expect(rows()).toEqual(['DeepSeek: DeepSeek V4', 'OpenAI: GPT-5', 'OpenAI: GPT-4.1 Nano']);
       await fireEvent.changeText(screen.getByLabelText('Search models'), ' GPT ');
-      expect(rows()).toEqual(['Auto', 'OpenAI: GPT-5', 'OpenAI: GPT-4.1 Nano']);
+      expect(rows()).toEqual(['OpenAI: GPT-5', 'OpenAI: GPT-4.1 Nano']);
       await fireEvent.changeText(screen.getByLabelText('Search models'), 'deepseek/');
-      expect(rows()).toEqual(['Auto', 'DeepSeek: DeepSeek V4']);
+      expect(rows()).toEqual(['DeepSeek: DeepSeek V4']);
       await fireEvent.changeText(screen.getByLabelText('Search models'), 'nothing like this');
       expect(screen.getByText('No model matches the search.')).toBeOnTheScreen();
       await fireEvent.changeText(screen.getByLabelText('Search models'), '');
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
       expect(screen.getByLabelText('Reasoning effort')).toHaveProp('accessibilityRole', 'radiogroup');
-      const efforts = () => screen.getAllByRole('radio').map((row) => row.props.accessibilityLabel).slice(4);
-      expect(efforts()).toEqual(['Auto (Medium)', 'High', 'Medium', 'Low', 'Minimal']);
-      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
+      const efforts = () => screen.getAllByRole('radio').map((row) => row.props.accessibilityLabel).slice(3);
+      expect(efforts()).toEqual(['Minimal', 'Low', 'Medium', 'High']);
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'High' }));
       expect(screen.getByRole('radio', { name: 'High', checked: true })).toBeOnTheScreen();
       await waitFor(async () => expect((await getItem<{ model: string; effort: string }>('settings'))?.value).toMatchObject({ model: 'openai/gpt-5', effort: 'high' }));
       await fireEvent.press(screen.getByRole('radio', { name: 'DeepSeek: DeepSeek V4' }));
-      expect(efforts()).toEqual(['Auto (High)', 'Max', 'Extra high', 'High', 'Medium', 'Low', 'Off']);
+      expect(efforts()).toEqual(['Off', 'Low', 'Medium', 'High', 'Extra high', 'Max']);
       expect(screen.getByRole('radio', { name: 'High', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'Off' }));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
-      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'Minimal' }));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-4.1 Nano' }));
       expect(screen.queryByLabelText('Reasoning effort')).toBeNull();
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
-      expect(screen.getByRole('radio', { name: 'Auto (Medium)', checked: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('radio', { name: 'Low' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
       expect(screen.queryByTestId('model-panel')).toBeNull();
       expect(chip('Model OpenAI: GPT-5, effort Low')).toHaveTextContent('GPT-5Low');
-      await fireEvent.press(chip('Model OpenAI: GPT-5, effort Low'));
-      await fireEvent.press(screen.getByRole('radio', { name: 'Auto' }));
-      expect(screen.queryByLabelText('Reasoning effort')).toBeNull();
-      await fireEvent(screen.getByTestId('model-picker'), 'requestClose');
-      expect(chip('Model Auto, effort Auto')).toBeOnTheScreen();
-      await waitFor(async () => expect((await getItem<{ model: null; effort: null }>('settings'))?.value).toMatchObject({ model: null, effort: null }));
+      expect(screen.queryByText('Choose a model to send a message.')).toBeNull();
+    });
+
+    it('does not send a new message until a model is chosen, and sends the default effort of that model', async () => {
+      server.on(modelsRoute, listed());
+      server.on(postRoute, posted());
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'First');
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+      await fireEvent.press(chip('Choose model'));
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: false, model: 'openai/gpt-5', effort: 'medium' });
+    });
+
+    it('sends the saved model before the list loads, with no extra wait', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-5', effort: 'high' });
+      server.on(modelsRoute, () => new Promise<Response>(() => {}));
+      server.on(postRoute, posted());
+      await show(<Chat />);
+      await connect();
+      expect(chip('Model gpt-5, effort High')).toHaveTextContent('gpt-5High');
+      await sendText('First');
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: false, model: 'openai/gpt-5', effort: 'high' });
     });
 
     it('sends the model and effort with a message, again on a retry, and never with a reply taskId', async () => {
@@ -977,17 +1027,15 @@ describe('Live', () => {
       ]);
     });
 
-    it('shows a saved model that is not in the list as Auto and sends no model or effort', async () => {
+    it('asks for a model again when the saved model left the list', async () => {
       await setItem('settings', { language: 'system', theme: 'system', model: 'gone/old-model', effort: 'high' });
       server.on(modelsRoute, listed());
-      server.on(postRoute, posted());
       await show(<Chat />);
       await connect();
-      await waitFor(() => expect(modelCalls()).toHaveLength(1));
-      expect(chip('Model Auto, effort Auto')).toHaveTextContent('Auto');
-      await sendText('First');
-      await waitFor(() => expect(posts()).toHaveLength(1));
-      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: false });
+      expect(await screen.findByRole('button', { name: 'Choose model' })).toHaveTextContent('Choose model');
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'First');
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+      expect(posts()).toHaveLength(0);
     });
 
     it('drops an effort that the saved model does not list', async () => {
@@ -996,10 +1044,40 @@ describe('Live', () => {
       server.on(postRoute, posted());
       await show(<Chat />);
       await connect();
-      expect(await screen.findByRole('button', { name: 'Model OpenAI: GPT-4.1 Nano, effort Auto' })).toHaveTextContent('GPT-4.1 Nano');
+      expect(await screen.findByRole('button', { name: 'Model OpenAI: GPT-4.1 Nano' })).toHaveTextContent('GPT-4.1 Nano');
       await sendText('Short answer');
       await waitFor(() => expect(posts()).toHaveLength(1));
       expect(posts()[0]!.body).toEqual({ text: 'Short answer', newTask: false, model: 'openai/gpt-4.1-nano' });
+    });
+
+    it('closes the picker when the handle is dragged down or tapped, and springs back after a short drag', async () => {
+      jest.useFakeTimers();
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      const touch = (y: number, time: number, active: boolean) => {
+        const record = { touchActive: active, startPageX: 0, startPageY: 500, startTimeStamp: 0, currentPageX: 0, currentPageY: y, currentTimeStamp: time, previousPageX: 0, previousPageY: 500, previousTimeStamp: 0 };
+        return { touchHistory: { touchBank: [record], numberActiveTouches: active ? 1 : 0, indexOfSingleActiveTouch: 0, mostRecentTimeStamp: time } };
+      };
+      const dragTo = async (y: number) => {
+        const handle = screen.getByTestId('model-handle');
+        await act(async () => {
+          handle.props.onResponderGrant(touch(500, 0, true));
+          handle.props.onResponderMove(touch(y, 2000, true));
+          handle.props.onResponderRelease(touch(y, 2000, false));
+          jest.advanceTimersByTime(2000);
+        });
+      };
+      await fireEvent.press(chip('Choose model'));
+      expect(screen.getByRole('button', { name: 'Close the model list' })).toBeOnTheScreen();
+      await dragTo(540);
+      expect(screen.getByTestId('model-panel')).toBeOnTheScreen();
+      await dragTo(700);
+      expect(screen.queryByTestId('model-panel')).toBeNull();
+      await fireEvent.press(chip('Choose model'));
+      expect(screen.getByTestId('model-panel')).toBeOnTheScreen();
+      await dragTo(500);
+      expect(screen.queryByTestId('model-panel')).toBeNull();
     });
 
     it('tries once more after a 503, shows a quiet error with retry, and loads again when the picker opens', async () => {
@@ -1010,11 +1088,11 @@ describe('Live', () => {
       await waitFor(() => expect(modelCalls()).toHaveLength(1));
       await act(async () => jest.advanceTimersByTime(modelsRetryMs));
       await waitFor(() => expect(modelCalls()).toHaveLength(2));
-      await fireEvent.press(chip('Model Auto, effort Auto'));
+      await fireEvent.press(chip('Choose model'));
       expect(await screen.findByText('OpenAI: GPT-5')).toBeOnTheScreen();
       expect(modelCalls()).toHaveLength(3);
       await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
-      await fireEvent.press(chip('Model Auto, effort Auto'));
+      await fireEvent.press(chip('Choose model'));
       expect(screen.getByText('OpenAI: GPT-5')).toBeOnTheScreen();
       expect(modelCalls()).toHaveLength(3);
     });
@@ -1024,7 +1102,7 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       await waitFor(() => expect(modelCalls()).toHaveLength(1));
-      await fireEvent.press(chip('Model Auto, effort Auto'));
+      await fireEvent.press(chip('Choose model'));
       expect(await screen.findByText('The model list did not load.')).toBeOnTheScreen();
       expect(modelCalls()).toHaveLength(2);
       await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
@@ -1053,7 +1131,7 @@ describe('Live', () => {
       );
       await waitFor(() => expect(screen.queryByText('Fama AI is locked')).toBeNull());
       await connect();
-      await fireEvent.press(chip('Model Auto, effort Auto'));
+      await fireEvent.press(chip('Choose model'));
       expect(screen.getByTestId('model-panel')).toBeOnTheScreen();
       let unlock = (_result: { success: true }) => {};
       jest.mocked(LocalAuthentication.authenticateAsync).mockReturnValueOnce(new Promise((resolve) => (unlock = resolve)));
@@ -1073,11 +1151,11 @@ describe('Live', () => {
       server.on(modelsRoute, listed());
       await show(<Chat />);
       await connect();
-      expect(labels(screen.getByTestId('composer'))).toEqual(['نیا کام', 'پیغام', 'ماڈل خود کار، سوچ کی سطح خود کار', 'بھیجیں']);
+      expect(labels(screen.getByTestId('composer'))).toEqual(['نیا کام', 'پیغام', 'ماڈل چنیں', 'بھیجیں']);
       await waitFor(() => expect(modelCalls()).toHaveLength(1));
-      await fireEvent.press(chip('ماڈل خود کار، سوچ کی سطح خود کار'));
+      await fireEvent.press(chip('ماڈل چنیں'));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
-      expect(screen.getByRole('radio', { name: 'خود کار (درمیانی)', checked: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'درمیانی', checked: true })).toBeOnTheScreen();
       expect(screen.getByLabelText('ماڈل تلاش کریں')).toHaveStyle({ textAlign: 'auto' });
       expect(I18nManager.forceRTL).toHaveBeenCalledWith(true);
     });
@@ -1119,7 +1197,7 @@ describe('Live', () => {
       expect(screen.getByText('Step 2')).toBeOnTheScreen();
       expect(screen.getByLabelText('Facts. Not started. Agent researcher')).toBeOnTheScreen();
       expect(screen.getByLabelText('Summary. Not started. Agent writer. After Facts')).toBeOnTheScreen();
-      expect(screen.getByLabelText('Waiting for approval. Approval required. Model: Auto. Cost $0.00')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Waiting for approval. Approval required. Cost $0.00')).toBeOnTheScreen();
       expect(screen.queryByRole('button', { name: 'Cancel task' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
     });
@@ -1260,7 +1338,7 @@ describe('Live', () => {
       await screen.findByText('Plan version 1, 2 subtasks');
       await sendDetail(socket, 11, running);
       expect(await screen.findByLabelText('Facts. Running. Agent researcher. Try 1')).toBeOnTheScreen();
-      expect(screen.getByLabelText('Running. Approval required. Model: Auto. Cost $0.00')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Running. Approval required. Cost $0.00')).toBeOnTheScreen();
       expect(screen.getByRole('button', { name: 'Pause' })).toBeOnTheScreen();
       await act(async () => socket.receive({ type: 'delta', taskId: ids.taskA, callId: ids.taskB, attempt: 1, i: 0, text: 'Some ' }));
       await act(async () => socket.receive({ type: 'delta', taskId: ids.taskA, callId: ids.taskB, attempt: 1, i: 1, text: 'facts' }));
@@ -1382,7 +1460,7 @@ describe('Live', () => {
       await fireEvent.press((await screen.findAllByRole('button', { name: 'Reply to this task' }))[0]!);
       expect(screen.getByText('Your next message goes to the task: Plan the week')).toBeOnTheScreen();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Model Auto, effort Auto' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Choose model' })).toBeDisabled();
       await fireEvent.press(screen.getByRole('button', { name: 'Cancel reply' }));
       expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
       await fireEvent.press(screen.getAllByRole('button', { name: 'Reply to this task' })[0]!);
@@ -1392,7 +1470,7 @@ describe('Live', () => {
       expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
       expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeEnabled();
-      expect(screen.getByRole('button', { name: 'Model Auto, effort Auto' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Choose model' })).toBeEnabled();
     });
 
     it('shows Reply only for a clarifying, running or paused task, from the task list status before a stale detail', async () => {

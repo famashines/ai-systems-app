@@ -206,7 +206,8 @@ function Detail({ detail, editing, setEditing }: { detail: TaskDetailV1; editing
   const outputs = useOutputs(detail);
   const subtasks = detail.plan?.subtasks ?? [];
   const titles = new Map(subtasks.map((subtask) => [subtask.subtaskId, subtask.title]));
-  const facts = [t(detail.mode === 'auto' ? 'task.modeAuto' : 'task.modeApproval'), t('task.model', { model: detail.model ?? t('chat.modelAuto') })];
+  const facts = [t(detail.mode === 'auto' ? 'task.modeAuto' : 'task.modeApproval')];
+  if (detail.model) facts.push(t('task.model', { model: detail.model }));
   if (detail.effort) facts.push(t('task.effort', { effort: t(`effort.${detail.effort}`) }));
   facts.push(t('task.cost', { cost: formatUsd(language, detail.costMicroUsd) }));
   return (

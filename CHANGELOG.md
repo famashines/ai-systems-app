@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Changed (model choice and Fama AI brand)
+
+- Auto is gone from the model and effort lists. Choose a model from the
+  list to send a new message. A reply to a task needs no model.
+- A chosen model starts at its default effort. The app sends that effort.
+- A rail of nodes and edges, low to high, replaces the effort chips.
+- The model and effort sheet has a handle. Drag it down or tap it to close
+  the sheet. A short drag springs back.
+- The colours are the Fama AI tokens of `logo-master/SPEC.md` again. The
+  mark shows in the side menu, on login, on the lock screen and in an
+  empty chat. The splash colour needs a native release.
+
+### Changed (new chat)
+
+- The pencil in the chat header starts a new chat. It clears the thread and
+  starts a new conversation. Tasks of the old chat stay in the Tasks list.
+
 ### Added (model and effort for a task)
 
 - The chat composer is one pill-shaped row: the New task switch (a task
@@ -9,7 +26,7 @@
   chip and a round send button.
 - The model chip opens a picker with a search field, the models that the
   API key can use (`GET /api/models`), and the reasoning efforts of the
-  chosen model. Auto is the default and sends nothing.
+  chosen model.
 - A new message with no `taskId` sends `model` and `effort`. A reply to a
   task never sends them.
 - The choice is kept in the settings. A model that is no longer in the
