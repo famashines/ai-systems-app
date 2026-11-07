@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed (composer and new conversation at start)
+
+- The chat composer has two rows: the input on the full width, then the
+  New task switch, the model chip and the send button. The placeholder
+  stays on one line. The composer is a rounded box, not a pill.
+- Each start of the app, and each sign-in, opens a new conversation. Tasks
+  of the old chat stay in the Tasks list.
+
 ### Changed (model choice and Fama AI brand)
 
 - Auto is gone from the model and effort lists. Choose a model from the

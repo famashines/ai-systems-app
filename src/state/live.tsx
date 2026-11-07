@@ -1,4 +1,4 @@
-import { BudgetMonthV1, Id, TaskListItemV1, type AgentListItemV1, type ModelListItemV1, type TaskDetailV1, type Topic } from '@famashines/ai-systems-contracts';
+import { BudgetMonthV1, TaskListItemV1, type AgentListItemV1, type ModelListItemV1, type TaskDetailV1, type Topic } from '@famashines/ai-systems-contracts';
 import * as Crypto from 'expo-crypto';
 import { createContext, useCallback, useContext, useEffect, useEffectEvent, useReducer, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
@@ -18,7 +18,6 @@ export const slowAfterMs = 10_000;
 export const updatedShowMs = 3_000;
 export const cachedTasksMax = 200;
 export const reloadDelayMs = 500;
-export const conversationKey = 'chat.conversationId';
 
 const CachedTasks = z.object({ items: z.array(TaskListItemV1), lastSeq: z.int().nonnegative() });
 
@@ -118,15 +117,6 @@ type Value = {
 };
 
 const LiveContext = createContext<Value | null>(null);
-
-async function conversationOf(): Promise<string> {
-  const cached = await getItem<unknown>(conversationKey).catch(() => null);
-  const known = Id.safeParse(cached?.value);
-  if (known.success) return known.data;
-  const fresh = Crypto.randomUUID();
-  await setItem(conversationKey, fresh).catch(() => {});
-  return fresh;
-}
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const session = useSession();
@@ -304,7 +294,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       return;
     }
     let live: LiveClient | null = null;
-    void Promise.all([getItem<unknown>(tasksCacheKey).catch(() => null), conversationOf()]).then(([cached, id]) => {
+    const id = Crypto.randomUUID();
+    void getItem<unknown>(tasksCacheKey).catch(() => null).then((cached) => {
       if (mine !== run.current) return;
       conversation.current = id;
       setConversationId(id);
@@ -520,7 +511,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       const fresh = Crypto.randomUUID();
       conversation.current = fresh;
       setConversationId(fresh);
-      void setItem(conversationKey, fresh).catch(() => {});
       dispatchChat({ type: 'clear' });
       dispatchChat({ type: 'page', items: [], first: true });
       setMessages([]);
