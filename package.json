@@ -9,9 +9,10 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "aab": "npx --yes eas-cli@23.0.0 build --local --platform android --profile production --non-interactive --output ./ai-systems-$npm_package_version.aab",
+    "aab": "node scripts/fingerprint.js --write && npx --yes eas-cli@23.0.0 build --local --platform android --profile production --non-interactive --output ./ai-systems-$npm_package_version.aab",
     "submit:play": "node --env-file=.env scripts/publish-google-play.js ./ai-systems-$npm_package_version.aab",
     "release:android": "npm run aab && npm run submit:play",
+    "ota": "node scripts/fingerprint.js --check && npx --yes eas-cli@23.0.0 update --channel production --platform android --environment production --non-interactive --message \"$(git log -1 --format=%s)\"",
     "lint": "expo lint && node scripts/no-comments.js",
     "typecheck": "tsc --noEmit",
     "contrast": "jest src/theme.test.ts",
@@ -36,6 +37,7 @@
     "expo-status-bar": "~58.0.4",
     "expo-symbols": "~58.0.4",
     "expo-system-ui": "~58.0.7",
+    "expo-updates": "~58.0.21",
     "expo-web-browser": "~58.0.7",
     "react": "19.3.0",
     "react-native": "0.88.1",
@@ -44,6 +46,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@expo/fingerprint": "~0.21.9",
     "@googleapis/androidpublisher": "^42.0.0",
     "@testing-library/react-native": "^14.1.0",
     "@types/jest": "30.0.0",
