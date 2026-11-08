@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button } from '@/components/ui';
+import { AppText, Button, Mark } from '@/components/ui';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { spacing } from '@/theme';
@@ -38,6 +38,7 @@ export function LockScreen() {
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.lock, { backgroundColor: colors.surface }]} accessibilityViewIsModal>
+      <Mark size={96} />
       <AppText variant="headline" accessibilityRole="header" style={styles.center}>
         {t('lock.title')}
       </AppText>
@@ -55,7 +56,7 @@ export function LockScreen() {
         </AppText>
       ) : null}
       <Button label={failed ? t('common.retry') : t('lock.button')} onPress={attempt} busy={busy} disabled={leaving === 'busy'} />
-      <Button label={t('settings.signOut')} onPress={leave} variant="tonal" busy={leaving === 'busy'} />
+      <Button label={t('settings.signOut')} onPress={leave} variant="outline" busy={leaving === 'busy'} />
     </View>
   );
 }

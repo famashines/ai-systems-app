@@ -22,6 +22,7 @@ export type LiveOptions = {
   refresh: () => Promise<boolean>;
   onStatus: (status: LiveStatus) => void;
   onSubscribed: (snapshot: boolean, lastSeq: number) => void;
+  onLaterSubscribed?: (topics: Topic[]) => void;
   onResync: () => void;
   onNotice: (notice: Notice) => void;
   onDelta: (delta: DeltaMessage) => void;
@@ -197,7 +198,10 @@ export class LiveClient {
         if (this.subscribed) this.options.onResync();
         return;
       case 'subscribed': {
-        if (!this.asked.shift()?.first) return;
+        if (!this.asked.shift()?.first) {
+          if (this.subscribed) this.options.onLaterSubscribed?.(message.topics);
+          return;
+        }
         const snapshot = !this.lastSeq || message.fromSeq > this.lastSeq + 1;
         if (!this.lastSeq) this.lastSeq = Math.max(message.fromSeq - 1, 0);
         clearTimeout(this.handshakeTimer);

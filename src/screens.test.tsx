@@ -1,6 +1,7 @@
 import { Id } from '@famashines/ai-systems-contracts';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { reloadAppAsync } from 'expo';
+import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useLocales } from 'expo-localization';
 import type { ReactElement } from 'react';
@@ -11,17 +12,28 @@ import Chat from '@/app/(tabs)/index';
 import Settings from '@/app/(tabs)/settings';
 import Tasks from '@/app/(tabs)/tasks';
 import Login from '@/app/login';
+import TaskScreen from '@/app/task/[id]';
+import { router } from 'expo-router';
 import { redirectSystemPath } from '@/app/+native-intent';
 import { LockScreen } from '@/components/lock-screen';
-import { StateView } from '@/components/ui';
+import { shortName } from '@/components/model-picker';
+import { Button, StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
-import { cachedTasksMax, conversationKey, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs } from '@/state/live';
+import { modelsRetryMs } from '@/lib/api';
+import { lockAfterMs } from '@/lib/lock';
+import { cachedTasksMax, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs, useLive } from '@/state/live';
 import { SessionProvider, useSession } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
-import { FakeSocket, fakeServer, ids, installFakeSocket, json, task } from '@/test-fakes';
+import { agentIds, detail, FakeSocket, fakeServer, ids, installFakeSocket, json, subtaskIds, task } from '@/test-fakes';
 
 jest.mock('expo', () => ({ ...jest.requireActual<object>('expo'), reloadAppAsync: jest.fn(async () => {}) }));
+
+const mockParams: { id?: string; edit?: string } = {};
+jest.mock('expo-router', () => ({
+  router: { push: jest.fn(), navigate: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
+  useLocalSearchParams: () => mockParams,
+}));
 
 jest.mock('expo-constants', () => ({ expoConfig: { version: '0.1.0' } }));
 
@@ -40,7 +52,8 @@ jest.mock('@/lib/auth', () => {
   };
 });
 
-jest.mock('expo-crypto', () => ({ randomUUID: () => jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID() }));
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+const realUuid = () => jest.requireActual<typeof import('node:crypto')>('node:crypto').randomUUID();
 
 function Probe() {
   const { status, locked } = useSession();
@@ -63,7 +76,7 @@ beforeEach(async () => {
   await removeItem('rtlReload');
   await removeItem('lock.reloadAt');
   await removeItem(tasksCacheKey);
-  await setItem(conversationKey, conversationId);
+  jest.mocked(Crypto.randomUUID).mockReset().mockImplementation(realUuid).mockReturnValueOnce(conversationId);
   installFakeSocket();
   jest.mocked(auth.getAccessToken).mockImplementation(() => new Promise(() => {}));
   jest.mocked(auth.refresh).mockResolvedValue(true);
@@ -456,7 +469,7 @@ describe('Live', () => {
       const socket = FakeSocket.last();
       await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
       await waitFor(async () => expect(await getItem(tasksCacheKey)).toBeNull());
-      expect(await getItem('settings')).toEqual(expect.objectContaining({ value: { language: 'system', theme: 'dark' } }));
+      expect(await getItem('settings')).toEqual(expect.objectContaining({ value: { language: 'system', theme: 'dark', model: null, effort: null } }));
       expect(socket.closedWith).toBe(1000);
       expect(screen.queryByText('Private task')).toBeNull();
     });
@@ -472,6 +485,8 @@ describe('Live', () => {
   });
 
   describe('Chat', () => {
+    beforeEach(() => setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-5', effort: null }));
+
     const owner = (messageId: string, text: string, rev = 1, taskId?: string, createdAt = '2026-11-01T10:00:00.000Z') => ({
       role: 'owner' as const,
       messageId,
@@ -512,6 +527,7 @@ describe('Live', () => {
       expect(screen.getByLabelText('Message')).toHaveProp('editable', false);
       expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
       expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'New chat' })).toBeDisabled();
     });
 
     it('reads the thread after subscribed, keeps one conversation id, and reads older pages until an empty page', async () => {
@@ -531,10 +547,9 @@ describe('Live', () => {
       expect(Object.fromEntries(threadCalls()[2]!.query)).toEqual({ limit: '50', before: older.createdAt, beforeId: ids.taskB });
       await act(async () => fireEvent(screen.getByTestId('chat-list'), 'onEndReached'));
       expect(threadCalls()).toHaveLength(3);
-      expect((await getItem(conversationKey))?.value).toBe(conversationId);
     });
 
-    it('clears the thread, live text, sent messages and budget on sign-out, and keeps the conversation id for the next sign-in', async () => {
+    it('clears the thread, live text, sent messages and budget on sign-out, and starts a new conversation on the next sign-in', async () => {
       server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 1, 'Old task')], headSeq: 10 }));
       server.on(threadRoute, json(200, { items: [owner(ids.taskB, 'Old thread', 2, ids.taskA)], headSeq: 10 }));
       server.on('GET /api/budget', json(200, { month: '2026-11', capMicroUsd: 5_000_000, spentMicroUsd: 0, reservedMicroUsd: 0, remainingMicroUsd: 5_000_000, overCapMicroUsd: 0, rev: 1, asOf: 1 }));
@@ -564,20 +579,19 @@ describe('Live', () => {
       for (const text of ['Old thread', 'Old stream', 'Pending text', 'Month 2026-11']) expect(screen.queryByText(text)).toBeNull();
       expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
       expect(screen.getByLabelText('Loading the budget')).toBeOnTheScreen();
-      expect((await getItem(conversationKey))?.value).toBe(conversationId);
+      expect(Crypto.randomUUID).toHaveBeenCalledTimes(3);
     });
 
-    it('makes and keeps a conversation id when the device has none', async () => {
-      await removeItem(conversationKey);
+    it('opens a new conversation each time the app starts', async () => {
+      const fresh = 'e5555555-5555-4555-8555-555555555555';
+      jest.mocked(Crypto.randomUUID).mockReset().mockImplementation(realUuid).mockReturnValueOnce(fresh);
       await show(<Chat />);
       const socket = await socketNumber(1);
       await act(async () => {
         socket.open();
         socket.receive({ type: 'welcome', sessionId: ids.session, headSeq: 10, heartbeatMs: 20_000 });
       });
-      const made = (await getItem<string>(conversationKey))?.value;
-      expect(Id.safeParse(made).success).toBe(true);
-      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${made}`] });
+      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${fresh}`] });
     });
 
     it('shows the error state of the thread and reads again from the retry button', async () => {
@@ -603,13 +617,47 @@ describe('Live', () => {
       const post = posts()[0]!;
       const key = post.headers.get('Idempotency-Key')!;
       expect(Id.safeParse(key).success).toBe(true);
-      expect(post.body).toEqual({ text: 'Plan the week', newTask: false });
+      expect(post.body).toEqual({ text: 'Plan the week', newTask: false, model: 'openai/gpt-5' });
       await said(socket, 11, owner(ids.taskB, 'Plan the week'), key);
       expect(screen.getByText('Received')).toBeOnTheScreen();
       expect(screen.getAllByText('Plan the week')).toHaveLength(1);
       await act(async () => answer(posted()));
       expect(screen.getByText('Received')).toBeOnTheScreen();
       expect(screen.getAllByText('Plan the week')).toHaveLength(1);
+    });
+
+    it('starts a new conversation from the header action', async () => {
+      server.on(threadRoute, json(200, { items: [owner(ids.taskA, 'Old thread')], headSeq: 10 }));
+      await show(<Chat />);
+      const socket = await connect();
+      expect(await screen.findByText('Old thread')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
+      expect(screen.queryByText('Old thread')).toBeNull();
+      expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
+      expect(screen.getByRole('switch', { name: 'New task' })).not.toBeChecked();
+      const fresh = jest.mocked(Crypto.randomUUID).mock.results.at(-1)?.value as string;
+      expect(Id.safeParse(fresh).success).toBe(true);
+      expect(fresh).not.toBe(conversationId);
+      expect(socket.sent).toContainEqual({ type: 'unsubscribe', topics: [`conversation:${conversationId}`] });
+      expect(socket.sent).toContainEqual({ type: 'subscribe', topics: [`conversation:${fresh}`] });
+      server.on(`POST /api/conversations/${fresh}/messages`, json(202, { conversationId: fresh, messageId: ids.taskB, intent: 'new_task' }));
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Another topic');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.path).toBe(`/api/conversations/${fresh}/messages`);
+      expect(posts()[0]!.body).toEqual({ text: 'Another topic', newTask: false, model: 'openai/gpt-5' });
+    });
+
+    it('does not show a late page of the old conversation in the new chat', async () => {
+      let answer = (_: Response) => {};
+      server.on(threadRoute, () => new Promise<Response>((resolve) => (answer = resolve)));
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(server.requests.some((request) => request.path === `/api/conversations/${conversationId}/messages`)).toBe(true));
+      await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
+      await act(async () => answer(json(200, { items: [owner(ids.taskA, 'Old thread')], headSeq: 10 })));
+      expect(screen.queryByText('Old thread')).toBeNull();
+      expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
     });
 
     it('sends newTask true once when the new task switch is on', async () => {
@@ -627,8 +675,8 @@ describe('Live', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
       await waitFor(() => expect(posts()).toHaveLength(2));
       expect(posts().map((request) => request.body)).toEqual([
-        { text: 'Another topic', newTask: true },
-        { text: 'Follow up', newTask: false },
+        { text: 'Another topic', newTask: true, model: 'openai/gpt-5' },
+        { text: 'Follow up', newTask: false, model: 'openai/gpt-5' },
       ]);
     });
 
@@ -788,6 +836,677 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       expect(await screen.findByText(/^Kosten 2,50\s\$$/)).toBeOnTheScreen();
+    });
+  });
+
+  describe('Model and effort', () => {
+    const modelsRoute = 'GET /api/models';
+    const models = [
+      { id: 'deepseek/deepseek-v4', name: 'DeepSeek: DeepSeek V4', efforts: ['max', 'xhigh', 'high', 'medium', 'low', 'none'], defaultEffort: 'high' },
+      { id: 'openai/gpt-5', name: 'OpenAI: GPT-5', efforts: ['high', 'medium', 'low', 'minimal'], defaultEffort: 'medium' },
+      { id: 'openai/gpt-4.1-nano', name: 'OpenAI: GPT-4.1 Nano', efforts: [] },
+    ];
+    const listed = () => json(200, { items: models });
+    const down = () => json(503, { type: 'about:blank', title: 'Down', status: 503, code: 'unavailable' });
+    const posted = () => json(202, { conversationId, messageId: ids.taskB, intent: 'new_task' });
+    const modelCalls = () => server.requests.filter((request) => request.path === '/api/models');
+    const chip = (name: string) => screen.getByRole('button', { name });
+    const labels = (node: unknown): string[] => {
+      if (typeof node !== 'object' || node === null) return [];
+      const element = node as { props: { accessibilityLabel?: string }; children: unknown[] };
+      return [...(element.props.accessibilityLabel ? [element.props.accessibilityLabel] : []), ...element.children.flatMap(labels)];
+    };
+    const sendText = async (text: string) => {
+      await fireEvent.changeText(screen.getByLabelText('Message'), text);
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+    };
+
+    beforeEach(() => {
+      jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+    });
+
+    it('shows one pill row: the task switch, the input, the model chip and the round send button', async () => {
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      expect(labels(screen.getByTestId('composer'))).toEqual(['Message', 'New task', 'Choose model', 'Send']);
+      const toggle = screen.getByRole('switch', { name: 'New task' });
+      expect(toggle).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
+      expect(toggle).toHaveProp('accessibilityHint', 'When it is off, a message goes to the task that waits for your answer or runs now. Turn on New task to start a new task with the next message.');
+      expect(screen.queryByText('New task')).toBeNull();
+      const model = chip('Choose model');
+      expect(model).toHaveProp('accessibilityHint', 'Opens the list of models and effort levels for the next new task.');
+      expect(model).toHaveStyle({ minHeight: 48, minWidth: 48, borderRadius: 999 });
+      expect(model).toHaveTextContent('Choose model');
+      expect(screen.getByText('Choose a model to send a message.')).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Send' })).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
+      expect(screen.getByPlaceholderText('Message Fama AI...')).toBeOnTheScreen();
+    });
+
+    it.each([
+      ['Anthropic: Claude Fable 5.1', 'Fable 5.1'],
+      ['Anthropic: Claude Opus 5.5', 'Opus 5.5'],
+      ['Anthropic: Claude Sonnet 5.5', 'Sonnet 5.5'],
+      ['Anthropic: Claude Haiku 5.5', 'Haiku 5.5'],
+      ['OpenAI: GPT-5', 'GPT-5'],
+      ['OpenAI: GPT-4.1 Nano', 'GPT-4.1 Nano'],
+      ['GPT-5', 'GPT-5'],
+    ])('shows %s as %s on the chip', (name, short) => {
+      expect(shortName(name)).toBe(short);
+    });
+
+    it('shows the short name on the chip and the full name in its label', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'anthropic/claude-opus-5.5', effort: 'max' });
+      server.on(modelsRoute, json(200, { items: [{ id: 'anthropic/claude-opus-5.5', name: 'Anthropic: Claude Opus 5.5', efforts: ['max', 'high'], defaultEffort: 'high' }] }));
+      await show(<Chat />);
+      await connect();
+      expect(await screen.findByRole('button', { name: 'Model Anthropic: Claude Opus 5.5, effort Max' })).toHaveTextContent('Opus 5.5Max');
+    });
+
+    it('does not bring back an old saved effort when the saved model left the list', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'gone/old-model', effort: 'high' });
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await fireEvent.press(chip('Choose model'));
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
+      expect(screen.getByRole('radio', { name: 'High', checked: false })).toBeOnTheScreen();
+      await waitFor(async () => expect((await getItem<{ model: string; effort: null }>('settings'))?.value).toMatchObject({ model: 'openai/gpt-5', effort: null }));
+    });
+
+    it('turns the chip off while offline', async () => {
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      expect(chip('Choose model')).toBeDisabled();
+      await connect();
+      expect(chip('Choose model')).toBeEnabled();
+    });
+
+    it('searches by name or id, starts at the default effort of the model, orders efforts low to high, and keeps the choice', async () => {
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await fireEvent.press(chip('Choose model'));
+      expect(screen.getByRole('header', { name: 'Model and effort' })).toBeOnTheScreen();
+      expect(screen.getByLabelText('Model')).toHaveProp('accessibilityRole', 'radiogroup');
+      expect(screen.queryByRole('radio', { name: 'Auto' })).toBeNull();
+      expect(screen.queryByRole('radio', { checked: true })).toBeNull();
+      expect(screen.queryByLabelText('Reasoning effort')).toBeNull();
+      const rows = () => screen.getAllByRole('radio').map((row) => row.props.accessibilityLabel);
+      expect(rows()).toEqual(['DeepSeek: DeepSeek V4', 'OpenAI: GPT-5', 'OpenAI: GPT-4.1 Nano']);
+      await fireEvent.changeText(screen.getByLabelText('Search models'), ' GPT ');
+      expect(rows()).toEqual(['OpenAI: GPT-5', 'OpenAI: GPT-4.1 Nano']);
+      await fireEvent.changeText(screen.getByLabelText('Search models'), 'deepseek/');
+      expect(rows()).toEqual(['DeepSeek: DeepSeek V4']);
+      await fireEvent.changeText(screen.getByLabelText('Search models'), 'nothing like this');
+      expect(screen.getByText('No model matches the search.')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Search models'), '');
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      expect(screen.getByLabelText('Reasoning effort')).toHaveProp('accessibilityRole', 'radiogroup');
+      const efforts = () => screen.getAllByRole('radio').map((row) => row.props.accessibilityLabel).slice(3);
+      expect(efforts()).toEqual(['Minimal', 'Low', 'Medium', 'High']);
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('radio', { name: 'High' }));
+      expect(screen.getByRole('radio', { name: 'High', checked: true })).toBeOnTheScreen();
+      await waitFor(async () => expect((await getItem<{ model: string; effort: string }>('settings'))?.value).toMatchObject({ model: 'openai/gpt-5', effort: 'high' }));
+      await fireEvent.press(screen.getByRole('radio', { name: 'DeepSeek: DeepSeek V4' }));
+      expect(efforts()).toEqual(['Off', 'Low', 'Medium', 'High', 'Extra high', 'Max']);
+      expect(screen.getByRole('radio', { name: 'High', checked: true })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('radio', { name: 'Off' }));
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('radio', { name: 'Minimal' }));
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-4.1 Nano' }));
+      expect(screen.queryByLabelText('Reasoning effort')).toBeNull();
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      expect(screen.getByRole('radio', { name: 'Medium', checked: true })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('radio', { name: 'Low' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+      expect(screen.queryByTestId('model-panel')).toBeNull();
+      expect(chip('Model OpenAI: GPT-5, effort Low')).toHaveTextContent('GPT-5Low');
+      expect(screen.queryByText('Choose a model to send a message.')).toBeNull();
+    });
+
+    it('does not send a new message until a model is chosen, and sends the default effort of that model', async () => {
+      server.on(modelsRoute, listed());
+      server.on(postRoute, posted());
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'First');
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+      await fireEvent.press(chip('Choose model'));
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: false, model: 'openai/gpt-5', effort: 'medium' });
+    });
+
+    it('sends the saved model before the list loads, with no extra wait', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-5', effort: 'high' });
+      server.on(modelsRoute, () => new Promise<Response>(() => {}));
+      server.on(postRoute, posted());
+      await show(<Chat />);
+      await connect();
+      expect(chip('Model gpt-5, effort High')).toHaveTextContent('gpt-5High');
+      await sendText('First');
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: false, model: 'openai/gpt-5', effort: 'high' });
+    });
+
+    it('sends the model and effort with a message, again on a retry, and never with a reply taskId', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-5', effort: 'high' });
+      server.on(modelsRoute, listed());
+      server.on(postRoute, new TypeError('Network request failed'), posted(), posted());
+      function Sender() {
+        const { send } = useLive();
+        return <Button label="Probe send" onPress={() => send('Use English only.', true, ids.taskA, { model: 'openai/gpt-5', effort: 'high' })} />;
+      }
+      await show(
+        <>
+          <Chat />
+          <Sender />
+        </>,
+      );
+      await connect();
+      await screen.findByRole('button', { name: 'Model OpenAI: GPT-5, effort High' });
+      await sendText('Plan the week');
+      await fireEvent.press(await screen.findByRole('button', { name: 'Send again' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Probe send' }));
+      await waitFor(() => expect(posts()).toHaveLength(3));
+      expect(posts().map((request) => request.body)).toEqual([
+        { text: 'Plan the week', newTask: false, model: 'openai/gpt-5', effort: 'high' },
+        { text: 'Plan the week', newTask: false, model: 'openai/gpt-5', effort: 'high' },
+        { text: 'Use English only.', newTask: false, taskId: ids.taskA },
+      ]);
+    });
+
+    it('asks for a model again when the saved model left the list', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'gone/old-model', effort: 'high' });
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      expect(await screen.findByRole('button', { name: 'Choose model' })).toHaveTextContent('Choose model');
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'First');
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+      expect(posts()).toHaveLength(0);
+    });
+
+    it('drops an effort that the saved model does not list', async () => {
+      await setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-4.1-nano', effort: 'high' });
+      server.on(modelsRoute, listed());
+      server.on(postRoute, posted());
+      await show(<Chat />);
+      await connect();
+      expect(await screen.findByRole('button', { name: 'Model OpenAI: GPT-4.1 Nano' })).toHaveTextContent('GPT-4.1 Nano');
+      await sendText('Short answer');
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'Short answer', newTask: false, model: 'openai/gpt-4.1-nano' });
+    });
+
+    it('closes the picker when the handle is dragged down or tapped, and springs back after a short drag', async () => {
+      jest.useFakeTimers();
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      const touch = (y: number, time: number, active: boolean) => {
+        const record = { touchActive: active, startPageX: 0, startPageY: 500, startTimeStamp: 0, currentPageX: 0, currentPageY: y, currentTimeStamp: time, previousPageX: 0, previousPageY: 500, previousTimeStamp: 0 };
+        return { touchHistory: { touchBank: [record], numberActiveTouches: active ? 1 : 0, indexOfSingleActiveTouch: 0, mostRecentTimeStamp: time } };
+      };
+      const dragTo = async (y: number) => {
+        const handle = screen.getByTestId('model-handle');
+        await act(async () => {
+          handle.props.onResponderGrant(touch(500, 0, true));
+          handle.props.onResponderMove(touch(y, 2000, true));
+          handle.props.onResponderRelease(touch(y, 2000, false));
+          jest.advanceTimersByTime(2000);
+        });
+      };
+      await fireEvent.press(chip('Choose model'));
+      expect(screen.getByRole('button', { name: 'Close the model list' })).toBeOnTheScreen();
+      await dragTo(540);
+      expect(screen.getByTestId('model-panel')).toBeOnTheScreen();
+      await dragTo(700);
+      expect(screen.queryByTestId('model-panel')).toBeNull();
+      await fireEvent.press(chip('Choose model'));
+      expect(screen.getByTestId('model-panel')).toBeOnTheScreen();
+      await dragTo(500);
+      expect(screen.queryByTestId('model-panel')).toBeNull();
+    });
+
+    it('tries once more after a 503, shows a quiet error with retry, and loads again when the picker opens', async () => {
+      jest.useFakeTimers();
+      server.on(modelsRoute, down(), down(), listed());
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await act(async () => jest.advanceTimersByTime(modelsRetryMs));
+      await waitFor(() => expect(modelCalls()).toHaveLength(2));
+      await fireEvent.press(chip('Choose model'));
+      expect(await screen.findByText('OpenAI: GPT-5')).toBeOnTheScreen();
+      expect(modelCalls()).toHaveLength(3);
+      await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+      await fireEvent.press(chip('Choose model'));
+      expect(screen.getByText('OpenAI: GPT-5')).toBeOnTheScreen();
+      expect(modelCalls()).toHaveLength(3);
+    });
+
+    it('shows the error in the picker and loads again from its retry button', async () => {
+      server.on(modelsRoute, new TypeError('Network request failed'), new TypeError('Network request failed'), listed());
+      await show(<Chat />);
+      await connect();
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await fireEvent.press(chip('Choose model'));
+      expect(await screen.findByText('The model list did not load.')).toBeOnTheScreen();
+      expect(modelCalls()).toHaveLength(2);
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('OpenAI: GPT-5')).toBeOnTheScreen();
+      expect(screen.queryByText('The model list did not load.')).toBeNull();
+    });
+
+    it('closes the picker when the app locks, and keeps it closed after unlock', async () => {
+      jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
+      const handlers: ((state: AppStateStatus) => void)[] = [];
+      jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, handler) => {
+        handlers.push(handler);
+        return { remove: () => {} };
+      });
+      let now = Date.now();
+      jest.spyOn(Date, 'now').mockImplementation(() => now);
+      function Lock() {
+        return useSession().locked ? <LockScreen /> : null;
+      }
+      server.on(modelsRoute, listed());
+      await show(
+        <>
+          <Chat />
+          <Lock />
+        </>,
+      );
+      await waitFor(() => expect(screen.queryByText('Fama AI is locked')).toBeNull());
+      await connect();
+      await fireEvent.press(chip('Choose model'));
+      expect(screen.getByTestId('model-panel')).toBeOnTheScreen();
+      let unlock = (_result: { success: true }) => {};
+      jest.mocked(LocalAuthentication.authenticateAsync).mockReturnValueOnce(new Promise((resolve) => (unlock = resolve)));
+      await act(async () => handlers.at(-1)!('background'));
+      now += lockAfterMs;
+      await act(async () => handlers.at(-1)!('active'));
+      expect(await screen.findByText('Fama AI is locked')).toBeOnTheScreen();
+      expect(screen.queryByTestId('model-panel', { includeHiddenElements: true })).toBeNull();
+      await act(async () => unlock({ success: true }));
+      await waitFor(() => expect(screen.queryByText('Fama AI is locked')).toBeNull());
+      expect(screen.queryByTestId('model-panel', { includeHiddenElements: true })).toBeNull();
+    });
+
+    it('is in Urdu, right to left, with the same row and picker', async () => {
+      jest.mocked(useLocales).mockReturnValue([{ languageCode: 'ur' } as ReturnType<typeof useLocales>[number]]);
+      jest.replaceProperty(I18nManager, 'isRTL', true);
+      server.on(modelsRoute, listed());
+      await show(<Chat />);
+      await connect();
+      expect(labels(screen.getByTestId('composer'))).toEqual(['پیغام', 'نیا کام', 'ماڈل چنیں', 'بھیجیں']);
+      await waitFor(() => expect(modelCalls()).toHaveLength(1));
+      await fireEvent.press(chip('ماڈل چنیں'));
+      await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
+      expect(screen.getByRole('radio', { name: 'درمیانی', checked: true })).toBeOnTheScreen();
+      expect(screen.getByLabelText('ماڈل تلاش کریں')).toHaveStyle({ textAlign: 'auto' });
+      expect(I18nManager.forceRTL).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('Task detail', () => {
+    const [s1, s2] = subtaskIds as [string, string];
+    const taskRoute = `GET /api/tasks/${ids.taskA}`;
+    const agents = {
+      items: [
+        { agentId: agentIds[0], name: 'researcher', enabled: true, activeVersion: 1, latestVersion: 1, rev: 1, asOf: 1 },
+        { agentId: agentIds[1], name: 'writer', enabled: true, activeVersion: 1, latestVersion: 1, rev: 1, asOf: 1 },
+      ],
+      headSeq: 1,
+    };
+    const state = (subtaskId: string, status: string, extra: Record<string, unknown> = {}) => ({ subtaskId, status, tries: 1, inputTokens: 0, outputTokens: 0, costMicroUsd: 0, ...extra });
+    const sendDetail = async (socket: FakeSocket, seq: number, doc: ReturnType<typeof detail>) =>
+      act(async () => socket.receive({ type: 'notice', seq, topic: `task:${ids.taskA}`, docId: ids.taskA, rev: doc.rev, data: doc }));
+    const controlPosts = (name: string) => posts().filter((request) => request.path === `/api/tasks/${ids.taskA}/${name}`);
+    const accepted = () => json(202, { taskId: ids.taskA, version: 9 });
+    const conflict = () => json(409, { type: 'about:blank', title: 'Conflict', status: 409, code: 'conflict' });
+
+    beforeEach(() => {
+      mockParams.id = ids.taskA;
+      delete mockParams.edit;
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+      server.on('GET /api/agents', json(200, agents));
+    });
+
+    it('subscribes the task topic, reads the detail after subscribed, and shows the plan by steps with text statuses', async () => {
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      expect(socket.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', 'budget', `conversation:${conversationId}`, `task:${ids.taskA}`] });
+      expect(await screen.findByText('Plan version 1, 2 subtasks')).toBeOnTheScreen();
+      expect(screen.getByText('Plan the week')).toBeOnTheScreen();
+      expect(screen.getByText('Step 1')).toBeOnTheScreen();
+      expect(screen.getByText('Step 2')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Facts. Not started. Agent researcher')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Summary. Not started. Agent writer. After Facts')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Waiting for approval. Approval required. Cost $0.00')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Cancel task' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+    });
+
+    it('shows the model and the effort that the owner chose for the task', async () => {
+      server.on(taskRoute, json(200, detail({ model: 'openai/gpt-5', effort: 'high' })));
+      await show(<TaskScreen />);
+      await connect();
+      expect(await screen.findByLabelText('Waiting for approval. Approval required. Model: openai/gpt-5. Effort: High. Cost $0.00')).toBeOnTheScreen();
+      expect(screen.getByText('Approval required · Model: openai/gpt-5 · Effort: High · Cost $0.00')).toBeOnTheScreen();
+    });
+
+    it('approves the plan with its version and a new key for each action, and shows the conflict and reads again on 409', async () => {
+      server.on(taskRoute, json(200, detail()), json(200, detail({ rev: 2, plan: { ...detail().plan!, planVersion: 2 } })));
+      server.on(`POST /api/tasks/${ids.taskA}/approve-plan`, conflict(), accepted());
+      await show(<TaskScreen />);
+      await connect();
+      await fireEvent.press(await screen.findByRole('button', { name: 'Approve plan' }));
+      expect(await screen.findByText('The task changed. The screen shows the new state now.')).toBeOnTheScreen();
+      expect(await screen.findByText('Plan version 2, 2 subtasks')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve plan' }));
+      await waitFor(() => expect(controlPosts('approve-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('approve-plan');
+      expect(first!.body).toEqual({ planVersion: 1 });
+      expect(second!.body).toEqual({ planVersion: 2 });
+      const keys = [first!, second!].map((request) => request.headers.get('Idempotency-Key'));
+      expect(keys.every((key) => Id.safeParse(key).success)).toBe(true);
+      expect(keys[0]).not.toBe(keys[1]);
+      await waitFor(() => expect(screen.queryByText('The task changed. The screen shows the new state now.')).toBeNull());
+    });
+
+    it('makes a new key for the same action after a 409, because the server answered it', async () => {
+      server.on(taskRoute, json(200, detail()), json(200, detail({ rev: 2 })));
+      server.on(`POST /api/tasks/${ids.taskA}/approve-plan`, conflict(), accepted());
+      await show(<TaskScreen />);
+      await connect();
+      await fireEvent.press(await screen.findByRole('button', { name: 'Approve plan' }));
+      expect(await screen.findByText('The task changed. The screen shows the new state now.')).toBeOnTheScreen();
+      await waitFor(() => expect(server.requests.filter((request) => request.path === `/api/tasks/${ids.taskA}`)).toHaveLength(2));
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve plan' }));
+      await waitFor(() => expect(controlPosts('approve-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('approve-plan');
+      expect(second!.body).toEqual(first!.body);
+      expect(second!.headers.get('Idempotency-Key')).not.toBe(first!.headers.get('Idempotency-Key'));
+    });
+
+    it('rejects the plan only with a reason, and shows a refused action', async () => {
+      server.on(taskRoute, json(200, detail()));
+      server.on(`POST /api/tasks/${ids.taskA}/reject-plan`, json(400, { type: 'about:blank', title: 'Bad', status: 400, code: 'validation_failed' }));
+      await show(<TaskScreen />);
+      await connect();
+      await fireEvent.press(await screen.findByRole('button', { name: 'Reject plan' }));
+      expect(screen.getByRole('button', { name: 'Reject and end the task' })).toBeDisabled();
+      await fireEvent.changeText(screen.getByLabelText('Reason for the rejection'), ' Too long. ');
+      await fireEvent.press(screen.getByRole('button', { name: 'Reject and end the task' }));
+      expect(await screen.findByText('The server did not accept this action.')).toBeOnTheScreen();
+      expect(controlPosts('reject-plan')[0]!.body).toEqual({ planVersion: 1, reason: 'Too long.' });
+      server.on(`POST /api/tasks/${ids.taskA}/reject-plan`, accepted());
+      await fireEvent.press(screen.getByRole('button', { name: 'Reject and end the task' }));
+      await waitFor(() => expect(controlPosts('reject-plan')).toHaveLength(2));
+      const [first, second] = controlPosts('reject-plan');
+      expect(second!.body).toEqual(first!.body);
+      expect(second!.headers.get('Idempotency-Key')).not.toBe(first!.headers.get('Idempotency-Key'));
+    });
+
+    it('opens the editor only while the plan waits for approval, and closes it when the task moves on', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      expect(await screen.findByTestId('plan-editor')).toBeOnTheScreen();
+      await sendDetail(socket, 11, detail({ rev: 2, status: 'running', runId: ids.taskC }));
+      await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+      expect(screen.queryByRole('button', { name: 'Approve plan' })).toBeNull();
+    });
+
+    it('says so when a new plan version comes during an edit, and loads it on request', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      await fireEvent.changeText(await screen.findByLabelText('Title of subtask 1'), 'My draft');
+      const next = detail({ rev: 2 }).plan!;
+      await sendDetail(socket, 11, detail({ rev: 2, plan: { planVersion: 2, subtasks: [{ ...next.subtasks[0]!, title: 'Server facts' }, next.subtasks[1]!] } }));
+      expect(await screen.findByText('The plan changed on the server while you edited it.')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Save plan' })).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Edit the new plan' }));
+      expect(await screen.findByText('Edit plan version 2')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Title of subtask 1')).toHaveProp('value', 'Server facts');
+    });
+
+    it('edits the plan: changes a title, adds a subtask, refuses a cycle, and sends the full plan with no estimates', async () => {
+      mockParams.edit = '1';
+      server.on(taskRoute, json(200, detail()));
+      server.on(`POST /api/tasks/${ids.taskA}/edit-plan`, accepted());
+      await show(<TaskScreen />);
+      await connect();
+      expect(await screen.findByText('Edit plan version 1')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Title of subtask 1'), 'Facts and figures');
+      await fireEvent.press(screen.getByRole('checkbox', { name: 'After Summary' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save plan' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('The subtasks wait for each other in a loop. Remove one of the Starts after choices.');
+      expect(controlPosts('edit-plan')).toHaveLength(0);
+      await fireEvent.press(screen.getByRole('checkbox', { name: 'After Summary' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Add subtask' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save plan' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Each subtask needs a title and instructions.');
+      await fireEvent.changeText(screen.getByLabelText('Title of subtask 3'), 'Check');
+      await fireEvent.changeText(screen.getByLabelText('Instructions for subtask 3'), 'Check the summary.');
+      await fireEvent.press(screen.getAllByRole('radio', { name: 'writer' })[2]!);
+      await fireEvent.press(screen.getAllByRole('checkbox', { name: 'After Summary' }).at(-1)!);
+      await fireEvent.press(screen.getByRole('button', { name: 'Move Check up' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save plan' }));
+      await waitFor(() => expect(controlPosts('edit-plan')).toHaveLength(1));
+      const body = controlPosts('edit-plan')[0]!.body as { planVersion: number; subtasks: Record<string, unknown>[] };
+      expect(body.planVersion).toBe(1);
+      expect(body.subtasks.map((item) => item.title)).toEqual(['Facts and figures', 'Check', 'Summary']);
+      const added = body.subtasks[1]!;
+      expect(Id.safeParse(added.subtaskId).success).toBe(true);
+      expect(added).toMatchObject({ agentId: agentIds[1], dependsOn: [s2], needsApproval: false, instructions: 'Check the summary.' });
+      expect(body.subtasks.some((item) => 'estimatedCostMicroUsd' in item || 'estimatedDurationMs' in item)).toBe(false);
+      expect(await screen.findByRole('button', { name: 'Approve plan' })).toBeOnTheScreen();
+    });
+
+    it('applies task notices by rev, shows the live text of the running call, reads the output of a done subtask and the result', async () => {
+      const running = detail({
+        status: 'running',
+        runId: ids.taskC,
+        rev: 2,
+        currentCall: null,
+        subtasks: [state(s1, 'running', { callId: ids.taskB, startedAt: '2026-11-01T10:01:00.000Z' }), state(s2, 'waiting')] as never,
+      });
+      server.on(taskRoute, json(200, detail()));
+      server.on(`GET /api/tasks/${ids.taskA}/subtasks/${s1}/output`, json(200, { taskId: ids.taskA, runId: ids.taskC, subtaskId: s1, text: 'All the facts.' }));
+      server.on(`GET /api/tasks/${ids.taskA}/output`, json(200, { taskId: ids.taskA, runId: ids.taskC, text: 'The final week plan.' }));
+      await show(<TaskScreen />);
+      const socket = await connect();
+      await screen.findByText('Plan version 1, 2 subtasks');
+      await sendDetail(socket, 11, running);
+      expect(await screen.findByLabelText('Facts. Running. Agent researcher. Try 1')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Running. Approval required. Cost $0.00')).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Pause' })).toBeOnTheScreen();
+      await act(async () => socket.receive({ type: 'delta', taskId: ids.taskA, callId: ids.taskB, attempt: 1, i: 0, text: 'Some ' }));
+      await act(async () => socket.receive({ type: 'delta', taskId: ids.taskA, callId: ids.taskB, attempt: 1, i: 1, text: 'facts' }));
+      expect(screen.getByLabelText('Live output: Some facts')).toBeOnTheScreen();
+      await sendDetail(socket, 12, { ...running, rev: 1, title: 'Old rev' });
+      expect(screen.queryByText('Old rev')).toBeNull();
+      await sendDetail(socket, 13, {
+        ...running,
+        rev: 3,
+        currentCall: { callId: ids.taskC, kind: 'aggregate' },
+        subtasks: [state(s1, 'done', { callId: ids.taskB, startedAt: '2026-11-01T10:01:00.000Z', endedAt: '2026-11-01T10:02:00.000Z', inputTokens: 10, outputTokens: 20, costMicroUsd: 1_500 }), state(s2, 'queued')] as never,
+      });
+      expect(await screen.findByLabelText('Output: All the facts.')).toBeOnTheScreen();
+      expect(screen.queryByLabelText('Live output: Some facts')).toBeNull();
+      expect(screen.getByLabelText('The orchestrator writes the result: No text yet')).toBeOnTheScreen();
+      expect(screen.getByLabelText(/Facts\. Done\. Agent researcher\. Try 1\. 10 tokens in, 20 tokens out\. Cost \$0\.0015/)).toBeOnTheScreen();
+      expect(screen.getByText('Timeline')).toBeOnTheScreen();
+      await sendDetail(socket, 14, { ...running, rev: 4, status: 'completed', currentCall: null, subtasks: [state(s1, 'done'), state(s2, 'done')] as never });
+      expect(await screen.findByLabelText('Result: The final week plan.')).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+      expect(screen.queryByRole('switch', { name: 'Auto-run this task' })).toBeNull();
+    });
+
+    it('resolves a checkpoint only while its subtask waits for approval, and keeps the key after a network error', async () => {
+      const checkpoint = { checkpointId: ids.taskC, subtaskId: s2, reason: 'Approval needed for Summary', status: 'open', openedAt: '2026-11-01T10:03:00.000Z' };
+      const base = { status: 'running' as const, runId: ids.taskC, checkpoints: [checkpoint] as never };
+      server.on(taskRoute, json(200, detail({ ...base, subtasks: [state(s1, 'done'), state(s2, 'queued')] as never })));
+      server.on(`POST /api/tasks/${ids.taskA}/resolve-checkpoint`, new TypeError('Network request failed'), accepted());
+      await show(<TaskScreen />);
+      const socket = await connect();
+      await screen.findByText('Plan version 1, 2 subtasks');
+      expect(screen.queryByText('Approval needed for Summary')).toBeNull();
+      await sendDetail(socket, 11, detail({ ...base, rev: 2, subtasks: [state(s1, 'done'), state(s2, 'awaiting_approval')] as never }));
+      expect(await screen.findByText('Approval needed for Summary')).toBeOnTheScreen();
+      await fireEvent.changeText(screen.getByLabelText('Comment, optional'), 'Keep it short.');
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve' }));
+      expect(await screen.findByText('Not sent. Check the connection and try again.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(controlPosts('resolve-checkpoint')).toHaveLength(2));
+      const [first, second] = controlPosts('resolve-checkpoint');
+      expect(first!.body).toEqual({ checkpointId: ids.taskC, decision: 'approved', comment: 'Keep it short.' });
+      expect(second!.headers.get('Idempotency-Key')).toBe(first!.headers.get('Idempotency-Key'));
+    });
+
+    it('pauses, cancels the run after a confirm, retries and reassigns a failed subtask, and changes the mode', async () => {
+      server.on(taskRoute, json(200, detail({ status: 'running', runId: ids.taskC, subtasks: [state(s1, 'failed', { reason: 'The model gave no output.' }), state(s2, 'waiting')] as never })));
+      for (const name of ['pause-run', 'cancel-run', 'retry-subtask', 'reassign-subtask', 'set-task-mode']) server.on(`POST /api/tasks/${ids.taskA}/${name}`, accepted());
+      await show(<TaskScreen />);
+      await connect();
+      expect(await screen.findByText('The model gave no output.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Pause' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel run' }));
+      expect(controlPosts('cancel-run')).toHaveLength(0);
+      await fireEvent.press(screen.getByRole('button', { name: 'Yes, cancel the run' }));
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Retry subtask' })[0]!);
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Change agent' })[0]!);
+      expect(screen.getByRole('button', { name: 'Save agent' })).toBeDisabled();
+      await fireEvent.press(screen.getByRole('radio', { name: 'writer' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Save agent' }));
+      await fireEvent.press(screen.getByRole('switch', { name: 'Auto-run this task' }));
+      await waitFor(() => expect(controlPosts('set-task-mode')).toHaveLength(1));
+      expect(controlPosts('pause-run')[0]!.body).toEqual({});
+      expect(controlPosts('cancel-run')[0]!.body).toEqual({});
+      expect(controlPosts('retry-subtask')[0]!.body).toEqual({ subtaskId: s1 });
+      expect(controlPosts('reassign-subtask')[0]!.body).toEqual({ subtaskId: s1, agentId: agentIds[1] });
+      expect(controlPosts('set-task-mode')[0]!.body).toEqual({ mode: 'auto' });
+      const keys = new Set(posts().map((request) => request.headers.get('Idempotency-Key')));
+      expect(keys.size).toBe(5);
+    });
+
+    it('opens the task from the task list', async () => {
+      await show(<Tasks />);
+      const socket = await connect();
+      await receive(socket, 11, task(ids.taskA, 1, 'Plan the week'));
+      await fireEvent.press(await screen.findByRole('button', { name: /^Plan the week\. Submitted/ }));
+      expect(router.push).toHaveBeenCalledWith({ pathname: '/task/[id]', params: { id: ids.taskA } });
+    });
+
+    it('shows an error for a task that does not load, and reads it again from the retry button', async () => {
+      server.on(taskRoute, json(404, { type: 'about:blank', title: 'Not Found', status: 404, code: 'not_found' }), json(200, detail()));
+      await show(<TaskScreen />);
+      await connect();
+      expect(await screen.findByText('The task did not load.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('Plan version 1, 2 subtasks')).toBeOnTheScreen();
+    });
+  });
+
+  describe('Plan preview and reply in the chat', () => {
+    const owner = { role: 'owner' as const, messageId: ids.taskB, text: 'Plan my week', intent: 'new_task' as const, taskId: ids.taskA, createdAt: '2026-11-01T10:00:00.000Z', rev: 2, asOf: 1 };
+    const agent = { role: 'agent' as const, messageId: ids.taskC, taskId: ids.taskA, text: 'Plan version 1, 2 subtasks: 1. Facts 2. Summary The plan waits for your approval.', createdAt: '2026-11-01T10:01:00.000Z', rev: 1, asOf: 2 };
+
+    beforeEach(() => {
+      server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 3, 'Plan the week', '2026-11-01T10:00:00.000Z', 'awaiting_approval')], headSeq: 10 }));
+      server.on(threadRoute, json(200, { items: [agent, owner], headSeq: 10 }));
+      server.on('GET /api/agents', json(200, { items: [{ agentId: agentIds[0], name: 'researcher', enabled: true, rev: 1, asOf: 1 }], headSeq: 1 }));
+      server.on(`GET /api/tasks/${ids.taskA}`, json(200, detail()));
+    });
+
+    it('subscribes the task later, reads its detail after subscribed, and approves the plan from the chat', async () => {
+      server.on(`POST /api/tasks/${ids.taskA}/approve-plan`, json(202, { taskId: ids.taskA, version: 4 }));
+      await show(<Chat />);
+      const socket = await connect();
+      await waitFor(() => expect(socket.sent.at(-1)).toEqual({ type: 'subscribe', topics: [`task:${ids.taskA}`] }));
+      expect(server.requests.filter((request) => request.path === `/api/tasks/${ids.taskA}`)).toHaveLength(0);
+      await act(async () => socket.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 11 }));
+      expect(await screen.findByText('Plan for Plan the week, version 1')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Summary. Agent unknown. After Facts. Estimate $0.02. About 2 min. Needs your approval before it starts')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'Approve plan' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ planVersion: 1 });
+    });
+
+    it('replies to a task with its taskId, turns off New task while it replies, and can cancel the reply', async () => {
+      server.on(postRoute, json(202, { conversationId, messageId: ids.session, intent: 'steer', taskId: ids.taskA }));
+      await show(<Chat />);
+      const socket = await connect();
+      await receive(socket, 11, task(ids.taskA, 4, 'Plan the week', '2026-11-01T10:00:00.000Z', 'running'));
+      await fireEvent.press((await screen.findAllByRole('button', { name: 'Reply to this task' }))[0]!);
+      expect(screen.getByText('Your next message goes to the task: Plan the week')).toBeOnTheScreen();
+      expect(screen.getByRole('switch', { name: 'New task' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Choose model' })).toBeDisabled();
+      await fireEvent.press(screen.getByRole('button', { name: 'Cancel reply' }));
+      expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Reply to this task' })[0]!);
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Use English only.');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
+      expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
+      expect(screen.getByRole('switch', { name: 'New task' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Choose model' })).toBeEnabled();
+    });
+
+    it('shows Reply only for a clarifying, running or paused task, from the task list status before a stale detail', async () => {
+      await show(<Chat />);
+      const socket = await connect();
+      await act(async () => socket.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 11 }));
+      await screen.findByText('Plan for Plan the week, version 1');
+      expect(screen.queryByRole('button', { name: 'Reply to this task' })).toBeNull();
+      const replies = () => screen.queryAllByRole('button', { name: 'Reply to this task' });
+      for (const [seq, status, shown] of [
+        [11, 'clarifying', true],
+        [12, 'blocked', false],
+        [13, 'paused', true],
+        [14, 'planning', false],
+        [15, 'running', true],
+      ] as const) {
+        await receive(socket, seq, task(ids.taskA, seq, 'Plan the week', '2026-11-01T10:00:00.000Z', status));
+        expect([status, replies().length > 0]).toEqual([status, shown]);
+      }
+      await act(async () => socket.receive({ type: 'notice', seq: 16, topic: `task:${ids.taskA}`, docId: ids.taskA, rev: 5, data: detail({ rev: 5, status: 'running', runId: ids.taskC }) }));
+      await receive(socket, 17, task(ids.taskA, 20, 'Plan the week', '2026-11-01T10:00:00.000Z', 'completed'));
+      expect(replies()).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: 'Open task' })).toBeNull();
+    });
+
+    it('never sends newTask together with a reply taskId', async () => {
+      server.on(postRoute, json(202, { conversationId, messageId: ids.session, intent: 'steer', taskId: ids.taskA }));
+      function Sender() {
+        const { send } = useLive();
+        return <Button label="Probe send" onPress={() => send('Use English only.', true, ids.taskA)} />;
+      }
+      await show(<Sender />);
+      await connect();
+      await fireEvent.press(screen.getByRole('button', { name: 'Probe send' }));
+      await waitFor(() => expect(posts()).toHaveLength(1));
+      expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
     });
   });
 
@@ -968,6 +1687,125 @@ describe('Live', () => {
       await act(async () => socket.serverClose(1006));
       expect(screen.getByText('آف لائن۔ کنکشن واپس آنے پر آپ حد بدل سکتے ہیں۔')).toBeOnTheScreen();
       expect(I18nManager.forceRTL).toHaveBeenLastCalledWith(true);
+    });
+  });
+
+  describe('Drawer', () => {
+    beforeEach(() => {
+      jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+    });
+
+    it('opens from the menu with the current section selected, and closes from the scrim, the close button and the back button', async () => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(<Budget />);
+      await connect();
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      const menu = screen.getByRole('button', { name: 'Open the menu' });
+      expect(menu).toHaveStyle({ width: 48, height: 48 });
+      await fireEvent.press(menu);
+      expect(screen.getByRole('button', { name: 'Budget', selected: true })).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Chat', selected: false })).toBeOnTheScreen();
+      expect(screen.getByText('No tasks yet.')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByTestId('drawer-scrim', { includeHiddenElements: true }));
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await fireEvent.press(menu);
+      await fireEvent.press(screen.getByRole('button', { name: 'Close the menu' }));
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await fireEvent.press(menu);
+      await fireEvent(screen.getByTestId('drawer'), 'requestClose');
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('goes to a section and closes', async () => {
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(<Tasks />);
+      await connect();
+      for (const [name, href] of [['Chat', '/'], ['Budget', '/budget'], ['Settings', '/settings']] as const) {
+        await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+        await fireEvent.press(screen.getByRole('button', { name }));
+        expect(router.navigate).toHaveBeenLastCalledWith(href);
+        expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      }
+    });
+
+    it('lists the recent tasks newest first with the status, and opens a task', async () => {
+      server.on('GET /api/tasks', json(200, { items: [task(ids.taskA, 1, 'Plan the week'), task(ids.taskB, 1, 'Older', '2026-10-30T10:00:00.000Z')], headSeq: 10 }));
+      await show(<Settings />);
+      await connect();
+      await waitFor(() => expect(tasksCalls()).toHaveLength(1));
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(await screen.findByRole('header', { name: 'Recent tasks' })).toBeOnTheScreen();
+      expect(screen.getAllByRole('button', { name: /\. Submitted$/ }).map((row) => row.props.accessibilityLabel)).toEqual(['Plan the week. Submitted', 'Older. Submitted']);
+      await fireEvent.press(screen.getByRole('button', { name: 'Plan the week. Submitted' }));
+      expect(router.push).toHaveBeenCalledWith({ pathname: '/task/[id]', params: { id: ids.taskA } });
+      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+    });
+
+    it('shows only the 10 newest tasks', async () => {
+      const page = Array.from({ length: 11 }, (_, i) => task(`${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`, 1, `Task ${i}`, new Date(Date.UTC(2026, 9, 31, 10, 0, 59 - i)).toISOString()));
+      server.on('GET /api/tasks', json(200, { items: page, headSeq: 10 }));
+      await show(<Settings />);
+      await connect();
+      await waitFor(() => expect(tasksCalls()).toHaveLength(1));
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      await waitFor(() => expect(screen.getAllByRole('button', { name: /^Task \d+\. Submitted$/ })).toHaveLength(10));
+      expect(screen.getAllByRole('button', { name: /^Task \d+\. Submitted$/ }).map((row) => row.props.accessibilityLabel)).toEqual(page.slice(0, 10).map((item) => `${item.title}. Submitted`));
+    });
+
+    it('shows no empty text while the tasks load or the device is offline', async () => {
+      server.on('GET /api/tasks', () => new Promise<Response>(() => {}));
+      await show(<Tasks />);
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(screen.getByRole('header', { name: 'Recent tasks' })).toBeOnTheScreen();
+      expect(screen.queryByText('No tasks yet.')).toBeNull();
+      await connect();
+      expect(screen.queryByText('No tasks yet.')).toBeNull();
+    });
+
+    it('hides the menu when the app locks, and keeps it closed after unlock', async () => {
+      jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
+      const handlers: ((state: AppStateStatus) => void)[] = [];
+      jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, handler) => {
+        handlers.push(handler);
+        return { remove: () => {} };
+      });
+      let now = Date.now();
+      jest.spyOn(Date, 'now').mockImplementation(() => now);
+      function Lock() {
+        return useSession().locked ? <LockScreen /> : null;
+      }
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(
+        <>
+          <Tasks />
+          <Lock />
+        </>,
+      );
+      await waitFor(() => expect(screen.queryByText('Fama AI is locked')).toBeNull());
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(screen.getByTestId('drawer-panel')).toBeOnTheScreen();
+      let unlock = (_result: { success: true }) => {};
+      jest.mocked(LocalAuthentication.authenticateAsync).mockReturnValueOnce(new Promise((resolve) => (unlock = resolve)));
+      await act(async () => handlers.at(-1)!('background'));
+      now += lockAfterMs;
+      await act(async () => handlers.at(-1)!('active'));
+      expect(await screen.findByText('Fama AI is locked')).toBeOnTheScreen();
+      expect(screen.queryByTestId('drawer-panel', { includeHiddenElements: true })).toBeNull();
+      await act(async () => unlock({ success: true }));
+      await waitFor(() => expect(screen.queryByText('Fama AI is locked')).toBeNull());
+      expect(screen.queryByTestId('drawer-panel', { includeHiddenElements: true })).toBeNull();
+    });
+
+    it.each([
+      [false, -304],
+      [true, 304],
+    ])('slides in from the start edge (right to left: %s)', async (rtl, offset) => {
+      jest.replaceProperty(I18nManager, 'isRTL', rtl);
+      server.on('GET /api/tasks', json(200, { items: [], headSeq: 10 }));
+      await show(<Tasks />);
+      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
+      expect(screen.getByTestId('drawer-panel')).toHaveStyle({ start: 0, transform: [{ translateX: offset }] });
     });
   });
 });

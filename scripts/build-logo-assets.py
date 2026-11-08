@@ -72,6 +72,8 @@ def write(images=images, store=store):
         render(images / 'adaptive-icon-monochrome.png', 1024, mark=(7, None, ('onPrimary',))),
         render(images / 'splash-icon-light.png', 1152, mark=(7, None, (g.ON_LIGHT,))),
         render(images / 'splash-icon-dark.png', 1152, mark=(7, None, (g.ON_DARK,))),
+        render(images / 'mark-light.png', 288, mark=(3, None, (g.ON_LIGHT,))),
+        render(images / 'mark-dark.png', 288, mark=(3, None, (g.ON_DARK,))),
         rgba(render(store / 'app-icon-512.png', 512, background=True, mark=(4, None, g.ON_BADGE))),
         feature_graphic(store / 'feature-graphic.png'),
     ]
@@ -155,6 +157,8 @@ def check():
     check_png(images / 'adaptive-icon-monochrome.png', (1024, 1024), 'RGBA', colours=('onPrimary',), safe=adaptive_safe)
     check_png(images / 'splash-icon-light.png', (1152, 1152), 'RGBA', colours=(g.ON_LIGHT,), safe=splash_safe)
     check_png(images / 'splash-icon-dark.png', (1152, 1152), 'RGBA', colours=(g.ON_DARK,), safe=splash_safe)
+    check_png(images / 'mark-light.png', (288, 288), 'RGBA', colours=(g.ON_LIGHT,), safe=144)
+    check_png(images / 'mark-dark.png', (288, 288), 'RGBA', colours=(g.ON_DARK,), safe=144)
     check_png(store / 'app-icon-512.png', (512, 512), 'RGBA', badge=True)
     check_png(store / 'feature-graphic.png', (1024, 500), 'RGB', badge=True)
     need(all(p.stat().st_size < 1024 * 1024 for p in store.glob('*.png')), 'a Play Store graphic is 1 MB or larger')

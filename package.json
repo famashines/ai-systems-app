@@ -1,7 +1,7 @@
 {
   "name": "ai-systems-app",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.5.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -9,9 +9,10 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "aab": "npx --yes eas-cli@23.0.0 build --local --platform android --profile production --non-interactive --output ./ai-systems-$npm_package_version.aab",
+    "aab": "node scripts/fingerprint.js --write && npx --yes eas-cli@23.0.0 build --local --platform android --profile production --non-interactive --output ./ai-systems-$npm_package_version.aab",
     "submit:play": "node --env-file=.env scripts/publish-google-play.js ./ai-systems-$npm_package_version.aab",
     "release:android": "npm run aab && npm run submit:play",
+    "ota": "node scripts/fingerprint.js --check && npx --yes eas-cli@23.0.0 update --channel production --platform android --environment production --non-interactive --message \"$(git log -1 --format=%s)\"",
     "lint": "expo lint && node scripts/no-comments.js",
     "typecheck": "tsc --noEmit",
     "contrast": "jest src/theme.test.ts",
@@ -19,31 +20,33 @@
     "verify": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
-    "@famashines/ai-systems-contracts": "github:famashines/ai-systems-contracts#v0.3.0",
-    "expo": "~58.0.22",
-    "expo-auth-session": "~58.0.16",
+    "@famashines/ai-systems-contracts": "github:famashines/ai-systems-contracts#v0.5.0",
+    "expo": "~58.0.23",
+    "expo-auth-session": "~58.0.17",
     "expo-build-properties": "~58.0.12",
     "expo-constants": "~58.0.14",
     "expo-crypto": "~58.0.7",
     "expo-font": "~58.0.11",
-    "expo-linking": "~58.0.15",
+    "expo-linking": "~58.0.16",
     "expo-local-authentication": "~58.0.2",
     "expo-localization": "~58.0.5",
-    "expo-router": "~58.0.29",
+    "expo-router": "~58.0.30",
     "expo-secure-store": "~58.0.2",
-    "expo-splash-screen": "~58.0.12",
+    "expo-splash-screen": "~58.0.13",
     "expo-sqlite": "~58.0.15",
     "expo-status-bar": "~58.0.4",
     "expo-symbols": "~58.0.4",
     "expo-system-ui": "~58.0.7",
+    "expo-updates": "~58.0.21",
     "expo-web-browser": "~58.0.7",
     "react": "19.3.0",
     "react-native": "0.88.1",
-    "react-native-safe-area-context": "~5.10.1",
+    "react-native-safe-area-context": "~5.11.1",
     "react-native-screens": "~4.30.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@expo/fingerprint": "~0.21.9",
     "@googleapis/androidpublisher": "^42.0.0",
     "@testing-library/react-native": "^14.1.0",
     "@types/jest": "30.0.0",
@@ -51,13 +54,13 @@
     "eslint": "^9.39.5",
     "eslint-config-expo": "~58.0.4",
     "globals": "^16.5.0",
-    "jest-expo": "~58.0.13",
+    "jest-expo": "~58.0.14",
     "react-dom": "19.3.0",
     "test-renderer": "^1.3.1",
     "typescript": "~6.0.3"
   },
   "allowScripts": {
-    "github:famashines/ai-systems-contracts#9ffcdd3175a8b7119682e0826fdf4438de085fd2": true
+    "github:famashines/ai-systems-contracts#a8c401c1e43bbea7631f34555f61b527acfab4a7": true
   },
   "jest": {
     "preset": "jest-expo",

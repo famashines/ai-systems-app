@@ -2,11 +2,13 @@
 
 The app is `Fama AI` in Google Play, package `com.famashines.ai`.
 The Expo project is `@m-yahya/ai-systems`. Releases go to the internal
-testing track (ADR 0012).
+testing track (ADR 0012). A JS-only change can go out as an EAS Update
+(section 6, ADR 0033).
 
 ```
 npm run aab ──> ai-systems-<version>.aab ──> Play Console (first release, by hand)
                                         └──> npm run submit:play (each later release)
+npm run ota ──> EAS Update, channel production ──> builds of the same version
 ```
 
 ## 1. What you need
@@ -153,6 +155,8 @@ The answers come from `PRIVACY.md`. Change both together.
 | Accounts | The app does not create accounts. The owner makes them in Keycloak. |
 | Personal info: User IDs | Collected, not shared. Required. Purpose: app functionality, account management. |
 | Messages: Other in-app messages (the chat text) | Collected, not shared. Required. Purpose: app functionality. |
+| Device or other IDs (the update client id of EAS Update) | Collected, not shared. Required. Purpose: app functionality. |
+| App info and performance: Crash logs (the error text of a failed start, sent to EAS Update) | Collected, not shared. Required. Purpose: app functionality. |
 | All other data types | Not collected. |
 
 The server sends the chat text to model providers through OpenRouter, as
@@ -203,7 +207,9 @@ release. After the app is published, remove the variable.
 
 Do these steps on your own machine.
 
-1. Update `main`: `git switch main && git pull --rebase origin main`.
+1. Update `main`: `git switch main && git pull --rebase origin main && npm ci`.
+   `npm run aab` writes the fingerprint from `node_modules`, so it must
+   match the lock file.
 2. Pick the bump from the conventional commit types since the last
    release: `major` for a breaking change, `minor` for a `feat`, `patch`
    for the other types. Then:
@@ -225,9 +231,50 @@ Do these steps on your own machine.
    open a pull request. Do not commit to `main`:
    ```
    git switch -c chore/release-<version>
-   git add package.json package-lock.json app.json
+   git add package.json package-lock.json app.json .github/last-release-fingerprint
    git commit -m "chore: release <version>"
    git push -u origin chore/release-<version>
    gh pr create --fill
    ```
    Do not commit a bump that did not reach Google Play.
+
+`npm run aab` writes the native fingerprint of the build to
+`.github/last-release-fingerprint` before it builds. Commit this file with
+the bump. `npm run ota` compares with it.
+
+## 6. Over-the-air updates
+
+The app has `expo-updates` from version 1.6.0. An update reaches only
+installed builds with the same version (`runtimeVersion` policy
+`appVersion`), on the channel `production`. Builds before 1.6.0 get no
+updates.
+
+```
+change since the last store release      release
+---------------------------------------  -------------------------------
+only src/, assets that JS imports         npm run ota
+a native dependency, app.json, a plugin,  native release (section 5)
+the icon or splash images, .gitignore,
+the scripts of package.json
+```
+
+These are the sources of the native fingerprint. `eas.json` is not one:
+check a change to it by hand.
+
+1. Merge the change to `main`. Do not bump the version: a new version is
+   a new runtime, and no installed build gets the update.
+2. Run:
+   ```
+   git switch main && git pull --rebase origin main && npm ci
+   npm run ota
+   ```
+   `ota` stops if the working tree is not clean, if `HEAD` is not the tip
+   of `origin/main`, or if the native fingerprint differs from
+   `.github/last-release-fingerprint`. If the fingerprint differs, make a
+   native release.
+3. The app checks for an update at each cold start and downloads it in the
+   background. The update shows at the next cold start.
+
+To undo a bad update, roll back to the last good update in the EAS
+dashboard (Updates, channel `production`), or run
+`npx --yes eas-cli@23.0.0 update:rollback`.

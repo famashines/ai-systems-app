@@ -9,12 +9,18 @@ src/
 ├── app/              routes only
 │   ├── _layout.tsx   providers, login guard, lock overlay
 │   ├── login.tsx
-│   └── (tabs)/       chat (index), tasks, budget, settings
-├── components/       ui.tsx (Screen, AppText, Button, StateView), lock-screen.tsx, live-bar.tsx
+│   ├── (tabs)/       chat (index), tasks, budget, settings; tabs with no tab bar, the side menu opens them
+│   └── task/[id].tsx task detail: plan, DAG by steps, live output, controls, timeline
+├── components/       ui.tsx (Screen with header, AppText, Icon, IconButton, Button, Card, StateView),
+│                     drawer.tsx (side menu: sections and recent tasks), lock-screen.tsx, live-bar.tsx,
+│                     model-picker.tsx (model chip and the model and effort picker),
+│                     task.tsx (status chip, plan summary, plan actions, plan editor, useControl)
 ├── i18n/             en.json, de.json, ur.json, t()
 ├── lib/              auth, lock, cache, config, api (HTTP), live (WebSocket client),
-│                     chat (thread, deltas, topics), money (micro-USD to text)
-├── state/            settings (language, theme), session (login, lock), live (tasks, chat, budget)
+│                     chat (thread, deltas, topics), money (micro-USD to text),
+│                     task (detail merge, allowed controls, DAG steps, plan draft)
+├── state/            settings (language, theme, model, effort), session (login, lock),
+│                     live (tasks, chat, budget, models)
 └── theme.ts          colour, spacing, type and radius tokens
 ```
 
@@ -108,14 +114,19 @@ reason in this section.
   lock the app (a mark valid for 30 seconds). A reload after a change of
   the device language locks as a normal cold start.
 - Theme: follows the device, with an override in Settings.
+- Navigation: the menu button at the start of the header opens a side menu
+  (Chat, Tasks, Budget, Settings and the 10 newest tasks). The menu comes
+  from the left, and from the right in Urdu. A tap on the dimmed area, the
+  close button or the back button closes it. The back button on Tasks,
+  Budget or Settings goes to Chat.
 - Live connection: one WebSocket for each signed-in session (also while
   locked). See "Live tasks", "Chat" and "Budget" below.
 
 ## Live tasks
 
-The app uses the contracts v0.3.0 schemas for each API answer
-(`TaskListResultV1`, `ConversationThreadResultV1`, `BudgetMonthV1`,
-`ProblemJson`) and each WebSocket frame
+The app uses the contracts v0.5.0 schemas for each API answer
+(`TaskListResultV1`, `TaskDetailV1`, `TaskOutputV1`, `AgentListResultV1`,
+`ModelListResultV1`, `ConversationThreadResultV1`, `BudgetMonthV1`, `ProblemJson`) and each WebSocket frame
 (`ClientMessageV1`, `ServerMessageV1`). A frame that does not parse (for
 example a message type from a later contracts version) does not close the
 socket: the app ignores it and counts it. If that frame has the type
@@ -147,8 +158,11 @@ First load and reconnect:
   cached, so the app also reads them at the first `subscribed` of each
   session.
 - Only the `subscribed` answer to the first `subscribe` of a socket starts
-  the session. A `subscribed` for a later `task:<id>` topic loads nothing:
-  the task topics have no read model yet (M3).
+  the session. A `subscribed` for a later `task:<id>` topic reads the
+  detail of that task (`GET /api/tasks/<id>`), because a later topic
+  starts at the head (ARCHITECTURE 10.2). At the first `subscribed` the
+  app reads the detail of each task topic that it has no detail for, and
+  of all task topics when it reads the snapshot.
 - A topic change sends `unsubscribe` before `subscribe`, so the server
   frees the slots first and a new task topic fits at 50 topics. When the
   server refuses a `subscribe` (`error` `validation_failed`, too many
@@ -190,7 +204,7 @@ it: 10 s after `subscribed`, or the first `notice` or `pong` after
 
 ```
 app                                api-gateway / socket-gateway
- | POST /api/conversations/<id>/messages { text, newTask }, Idempotency-Key
+ | POST /api/conversations/<id>/messages { text, newTask, model?, effort? }, Idempotency-Key
  | <-- 202 { messageId, intent, taskId? }
  | <-- notice conversation:<id> owner message { commandId }      "Received"
  | <-- notice conversation:<id> owner message rev 2 { taskId }
@@ -205,14 +219,35 @@ app                                api-gateway / socket-gateway
   (`chat.conversationId`). Sign-out keeps it, so the thread is there
   again after the next sign-in; the id has no data, and each read needs
   the token.
-- New task: the switch "New task" next to the input. When it is on, the
+- Composer: one row in a pill-shaped bar at the bottom. The lines "The
+  next message starts a new task." and "Your next message goes to the
+  task" show above the row.
+
+  ```
+  ( task ) | Message Fama AI...            | ( GPT-5 ) ( ^ )
+                                             (  High )
+   switch     input, multiline, max 160 dp   model chip  send
+  ```
+
+  Each control is 48 dp or more. The task switch has a task icon and no
+  text; TalkBack reads "New task" and its state. Send is a round filled
+  button with an arrow.
+- New task: the task switch at the start of the row. When it is on, the
   next message has `newTask: true`, and the switch goes off after the
   send. When it is off, the message has `newTask: false`, and
-  conversation-hub decides: a running task of the thread gets the
-  message (steer), else it starts a new task. In this version
-  orchestration refuses a message to a running task (the refusal comes as
-  a reply), and the TalkBack hint of the switch says so. The app never
-  sends a `taskId`.
+  conversation-hub decides: a task that waits for answers gets the
+  message (answer), else a running task (steer), else it starts a new
+  task.
+- Reply to a task: an agent reply has "Reply to this task" only while
+  its task is `clarifying`, `running` or `paused` (the status of the task
+  list first, because a stored detail can be old after its topic is
+  unsubscribed). For other statuses the server refuses the reply, so the
+  button does not show. The composer then shows the task title and
+  "Cancel reply", the New task switch is off, and the next message has
+  the `taskId` of that task (`newTask: false`, no `mode`).
+  conversation-hub makes it an `answer` for a `clarifying` task and a
+  `steer` for a running or paused task. To change a plan, use the plan
+  buttons.
 - Thread: `GET /api/conversations/<id>/messages?limit=50`, newest first,
   shown in an inverted list (newest at the bottom). Older pages use
   `before` = `createdAt` and `beforeId` = `messageId` of the last item of
@@ -261,9 +296,126 @@ TalkBack reads each status change of a message (polite live region).
 Offline: the app keeps the task list (the newest 200 tasks) and `lastSeq`
 in the sqlite cache (key `live.tasks`), only after a snapshot. While the socket is not
 connected, the Tasks screen shows "Offline, last update hh:mm" and the
-chat input, the New task switch and Send are off, and the Budget form
+chat input, the New task switch, the model chip and Send are off, and the Budget form
 cannot save. Sign-out (also from the lock screen, or when
 the session ends) removes `live.tasks` and keeps the settings.
+
+## Model and effort
+
+The owner chooses the model and the reasoning effort of a new task.
+There is no Auto. Send stays off until a model is chosen. A reply to a
+task needs no model.
+
+```
+app                                   api-gateway -> ai-proxy
+ | GET /api/models (after the first subscribed) ------------>
+ | <-- 200 { items: [{ id, name, efforts, defaultEffort? }] }  (ModelListResultV1)
+ | <-- 503 (cold cache): wait 2 s, read one more time
+ | picker opens after a failed read, or with an empty list: read again
+ | POST .../messages { text, newTask, model, effort? } ---------------->
+```
+
+- The model chip in the composer shows a short model name and, on a
+  second line, the effort, for example "GPT-5" and "High". With no model
+  it shows "Choose model", and the composer says that a model is needed. The short name is the text after "Provider: ". When that text
+  is longer than 12 characters, the chip shows only its last two words
+  ("Anthropic: Claude Opus 5.5" shows as "Opus 5.5"). The picker list
+  and the TalkBack label have the full name. TalkBack reads "Model <name>, effort <effort>" and a hint.
+- The chip opens the picker (a modal with a title): a search field (it
+  filters by name or id), the radio group "Model" (the list, in a
+  `FlatList`, because the list can have about 400 models) and the radio
+  group "Reasoning effort". The effort group is a rail of nodes and edges,
+  from low to high. It shows only when the model has efforts, and only the
+  efforts of that model. It starts at the default of the model. "none"
+  shows as "Off". Done, the back button, a tap on the dimmed area
+  or the handle at the top (drag it down or tap it) closes the picker.
+- When the read fails, the picker shows "The model list did not load."
+  with Try again.
+- A model change keeps the effort in use only when the new model has it,
+  else the effort goes back to the default of the new model. A saved effort that is not in use
+  (because the saved model is not in the list) does not come back.
+- The choice is kept in the settings (sqlite cache key `settings`) and
+  stays after sign-out.
+- A saved model that is not in the list shows as "Choose model". A saved
+  effort that the model does not have is not sent. Until the list loads,
+  the app uses the saved model, and the chip shows the last part of its id.
+- The app sends `model` and `effort` only in a message with no `taskId`.
+  A reply to a task never has them, and the chip is off while you reply.
+  When conversation-hub makes a message without a `taskId` an answer or
+  a steer, it ignores them.
+- The picker closes when the app locks, the same as the side menu.
+- The task screen shows "Model: <id>" (or "Model: Auto") and
+  "Effort: <effort>" when the task has an effort.
+
+## Task detail and plans
+
+```
+Tasks list row / chat "Open task"  -->  /task/<taskId>
+  watch(taskId) adds task:<taskId> to the topics (first, before thread tasks)
+  <-- subscribed task:<taskId>  -->  GET /api/tasks/<taskId>     TaskDetailV1
+  <-- notice task:<taskId> rev n                                 replaces the detail when rev is higher
+  <-- delta { callId, attempt, i, text }                         live text by (taskId, callId)
+  subtask done      -->  GET /api/tasks/<id>/subtasks/<sid>/output
+  task completed    -->  GET /api/tasks/<id>/output
+```
+
+- The screen shows the status (an icon glyph, a text and a colour, never
+  colour only), the mode, the cost, the reason, the owner controls, the
+  current orchestrator call (`currentCall`: plan, aggregate or check) with
+  its live text, the plan by steps, and the timeline.
+- DAG: the subtasks are grouped in steps by depth of `dependsOn` (step 1
+  has no dependencies). Each subtask has its agent, "After <titles>",
+  tries, tokens, cost, the next try time and the failure reason. TalkBack
+  reads the DAG and the timeline as lists.
+- Live output: a running subtask shows the text of its `callId` (the
+  same delta state as the chat, kept by `(taskId, callId)`, with the
+  attempt rule). When the subtask is `done`, the screen shows its output
+  from the read and no longer shows the delta text. The live text has no
+  TalkBack live region.
+- Checkpoints: the latest checkpoint of a subtask shows its reason and
+  deadline. Approve and Refuse (with an optional comment) show only while
+  the checkpoint is `open` and the subtask is `awaiting_approval`.
+- Plan preview in the chat: each task of the thread whose detail and
+  task list status is `awaiting_approval` gets a plan card: each subtask
+  with its agent, dependencies, estimated cost and time, and approval
+  rule; Approve plan, Edit plan (opens the task screen in edit mode),
+  Reject plan (with a reason, required) and Open task.
+- Edit plan: title, instructions, agent (enabled agents from
+  `GET /api/agents`), "Starts after" (dependsOn), needs approval, move up
+  or down, remove, add (a new `subtaskId` from `expo-crypto`). The app
+  drops the estimates; the server makes them again. A change of the agent
+  removes the `model` of that subtask, because orchestration refuses a
+  model that the agent does not use. The editor shows only while the task
+  is `awaiting_approval` with a plan. Before it sends, the
+  app checks the plan with `PlanSubtasks` (1 to 20 subtasks, a title and
+  instructions for each, no cycle). If a new plan version comes while you
+  edit, the editor says so and loads the new plan on request.
+
+Owner controls (`POST /api/tasks/<taskId>/<control>`):
+
+| Control | Shown when |
+| ------- | ---------- |
+| Approve, Edit, Reject plan | task `awaiting_approval` with a plan |
+| Pause | task `running` |
+| Resume | task `paused`, or `blocked` with a `blocked` subtask (a failed subtask needs Retry) |
+| Cancel run (with a confirm step) | task `running`, `paused` or `blocked` |
+| Cancel task (with a confirm step) | task `submitted`, `clarifying` or `planning` |
+| Retry subtask | subtask `failed` or `blocked`, during a run |
+| Change agent (reassign) | subtask not `running`, `done`, `cancelled` or `skipped`, during a run |
+| Auto-run switch (set mode) | task not ended |
+| Resolve checkpoint | checkpoint `open` and subtask `awaiting_approval` |
+
+- Each action has its own `Idempotency-Key` (a lower-case UUID v4). A
+  press of the same action with the same body after a network error or a
+  503 uses the same key again; any other press makes a new key.
+- 502, 503 and 429: up to 4 attempts with backoff (the same rule as the
+  chat), then "Service not available. Try again later."
+- 409: "The task changed. The screen shows the new state now." The app
+  reads the detail again.
+- 400, 403, 404 and other problems: "The server did not accept this
+  action."
+- A network error: "Not sent. Check the connection and try again."
+- The controls are off while the socket is not connected.
 
 ## Budget
 
@@ -302,6 +454,10 @@ second task through the API from the host while the phone is offline (two
 times with the same `Idempotency-Key`), turns airplane mode off, and
 checks that each task shows once.
 
+`.maestro/plan-approval.yaml` signs in, starts a new task in approval
+mode, waits for the plan card, approves the plan, opens the task, and
+waits until the task shows "Completed".
+
 `.maestro/budget-cap.yaml` signs in, opens the Budget tab, sets a monthly
 cap of 0.05 USD with a soft cap of 0.04 USD, and waits until the view
 shows the cap.
@@ -336,7 +492,7 @@ EXPO_PUBLIC_OIDC_ISSUER=<issuer URL that the emulator and the containers both re
 EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 \
 EXPO_PUBLIC_WS_URL=ws://10.0.2.2:8081/ws npm run android
 adb shell pm clear com.android.chrome
-maestro test .maestro/live-tasks.yaml .maestro/budget-cap.yaml \
+maestro test .maestro/live-tasks.yaml .maestro/budget-cap.yaml .maestro/plan-approval.yaml \
   -e API_URL=http://localhost:8080 \
   -e ISSUER=<the same issuer URL, as the host reaches it> \
   -e TOKEN_CLIENT_ID=<client with the password grant> \
@@ -356,8 +512,12 @@ audience `ai-systems-app` and the role `owner`.
   tasks are in the Tasks list.
 - One conversation for each device. There is no list of threads and no
   way to start a second thread (M2 scope).
-- The app does not send a `taskId`, so it cannot steer a `blocked` task
-  (conversation-hub steers a blocked task only with its `taskId`).
+- Push deferred (owner decision). There are no push notifications, no
+  Firebase module and no device registration in this version.
+- The task detail is not in the offline cache. Offline, a task that was
+  not loaded in this session shows "Loading the task".
+- Each subtask output is read once for each run when the subtask is
+  `done`. It is not read again when only the view changes.
 - A task that is older than the loaded task list and whose newest thread
   message is an owner message stays subscribed (at most 47 task topics).
 - Each `conversation:<id>` and `budget` notice also moves the `lastSeq`

@@ -1,30 +1,40 @@
 import type { TaskListItemV1 } from '@famashines/ai-systems-contracts';
-import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
+import { Menu } from '@/components/drawer';
 import { LiveBar } from '@/components/live-bar';
 import { AppText, Screen, StateView } from '@/components/ui';
 import { formatTime } from '@/i18n';
 import { useLive } from '@/state/live';
 import { useSettings } from '@/state/settings';
-import { radius, spacing } from '@/theme';
+import { spacing, touchTarget } from '@/theme';
 
 function Row({ task }: { task: TaskListItemV1 }) {
   const { t, colors, language } = useSettings();
   const status = t(`taskStatus.${task.status}`);
   const time = formatTime(language, task.createdAt);
   return (
-    <View
+    <Pressable
       testID={`task-${task.taskId}`}
-      accessible
+      accessibilityRole="button"
       accessibilityLabel={t('tasks.item', { title: task.title, status, time })}
-      style={[styles.task, { backgroundColor: colors.surfaceContainer }]}
+      accessibilityHint={t('tasks.open')}
+      onPress={() => router.push({ pathname: '/task/[id]', params: { id: task.taskId } })}
+      android_ripple={{ color: colors.outlineVariant }}
+      style={styles.task}
     >
-      <AppText>{task.title}</AppText>
+      <AppText numberOfLines={2}>{task.title}</AppText>
       <AppText variant="bodySmall" color="onSurfaceVariant">
         {t('tasks.meta', { status, time })}
       </AppText>
-    </View>
+    </Pressable>
   );
+}
+
+function Divider() {
+  const { colors } = useSettings();
+  return <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />;
 }
 
 function Footer() {
@@ -48,6 +58,7 @@ function Body() {
           data={tasks}
           keyExtractor={(task) => task.taskId}
           renderItem={({ item }) => <Row task={item} />}
+          ItemSeparatorComponent={Divider}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           ListFooterComponent={Footer}
@@ -66,7 +77,7 @@ export default function Tasks() {
   const { t, language } = useSettings();
   const { online, updatedAt } = useLive();
   return (
-    <Screen title={t('tabs.tasks')}>
+    <Screen title={t('tabs.tasks')} start={<Menu current="/tasks" />}>
       <LiveBar />
       {!online && updatedAt !== null ? (
         <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite">
@@ -79,7 +90,8 @@ export default function Tasks() {
 }
 
 const styles = StyleSheet.create({
-  list: { gap: spacing.sm, paddingBottom: spacing.md },
-  task: { gap: spacing.xs, padding: spacing.md, borderRadius: radius.lg },
+  list: { paddingBottom: spacing.md },
+  task: { gap: spacing.xs, paddingVertical: spacing.md, minHeight: touchTarget, justifyContent: 'center' },
+  divider: { height: StyleSheet.hairlineWidth },
   footer: { padding: spacing.md },
 });

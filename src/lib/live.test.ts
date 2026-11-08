@@ -16,6 +16,7 @@ function setup(overrides: Partial<LiveOptions> = {}) {
     refresh: jest.fn(async () => true),
     onStatus: (status) => statuses.push(status),
     onSubscribed: jest.fn(),
+    onLaterSubscribed: jest.fn(),
     onResync: jest.fn(),
     onNotice: jest.fn(),
     onDelta: jest.fn(),
@@ -489,6 +490,7 @@ it('subscribes and unsubscribes the changed topics, and sends every topic in the
   ]);
   first.receive({ type: 'subscribed', topics: [`task:${ids.taskA}`], fromSeq: 90 });
   expect(options.onSubscribed).toHaveBeenCalledTimes(1);
+  expect(options.onLaterSubscribed).toHaveBeenCalledWith([`task:${ids.taskA}`]);
   first.receive({ type: 'unsubscribed', topics: ['budget'] });
   expect(options.onUnsubscribed).toHaveBeenCalledWith(['budget']);
   first.serverClose(1006);
@@ -498,6 +500,7 @@ it('subscribes and unsubscribes the changed topics, and sends every topic in the
   expect(second).not.toBe(first);
   expect(first.sent.filter((frame) => frame.type === 'subscribe')).toHaveLength(2);
   await connect(second, 11);
+  expect(options.onLaterSubscribed).toHaveBeenCalledTimes(1);
   expect(second.sent[0]).toEqual({ type: 'hello', v: 1, token: 'access-1', lastSeq: 10 });
   expect(second.sent[1]).toEqual({ type: 'subscribe', topics: ['tasks', `task:${ids.taskA}`, `task:${ids.taskB}`] });
   expect(options.onSubscribed).toHaveBeenLastCalledWith(false, 10);

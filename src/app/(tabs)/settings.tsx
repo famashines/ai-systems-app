@@ -2,7 +2,8 @@ import Constants from 'expo-constants';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Screen, StateView } from '@/components/ui';
+import { Menu } from '@/components/drawer';
+import { AppText, Button, Card, Screen, StateView } from '@/components/ui';
 import { languages, type Key } from '@/i18n';
 import { useSession } from '@/state/session';
 import { useSettings, type LanguageChoice, type ThemeChoice } from '@/state/settings';
@@ -12,28 +13,30 @@ function Choices<T extends string>({ label, options, value, onChange }: { label:
   const { colors } = useSettings();
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel={label} style={styles.group}>
-      <AppText variant="label" color="onSurfaceVariant" accessibilityRole="header">
+      <AppText variant="label" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
         {label}
       </AppText>
-      {options.map(([option, text]) => {
-        const selected = option === value;
-        return (
-          <Pressable
-            key={option}
-            accessibilityRole="radio"
-            accessibilityLabel={text}
-            accessibilityState={{ checked: selected }}
-            onPress={() => onChange(option)}
-            android_ripple={{ color: colors.outlineVariant }}
-            style={[styles.option, { backgroundColor: selected ? colors.primaryContainer : 'transparent' }]}
-          >
-            <View style={[styles.radio, { borderColor: selected ? colors.onPrimaryContainer : colors.outline }]}>
-              {selected ? <View style={[styles.dot, { backgroundColor: colors.onPrimaryContainer }]} /> : null}
-            </View>
-            <AppText color={selected ? 'onPrimaryContainer' : 'onSurface'}>{text}</AppText>
-          </Pressable>
-        );
-      })}
+      <Card>
+        {options.map(([option, text]) => {
+          const selected = option === value;
+          return (
+            <Pressable
+              key={option}
+              accessibilityRole="radio"
+              accessibilityLabel={text}
+              accessibilityState={{ checked: selected }}
+              onPress={() => onChange(option)}
+              android_ripple={{ color: colors.outlineVariant }}
+              style={styles.option}
+            >
+              <View style={[styles.radio, { borderColor: selected ? colors.primary : colors.outline }]}>
+                {selected ? <View style={[styles.dot, { backgroundColor: colors.primary }]} /> : null}
+              </View>
+              <AppText>{text}</AppText>
+            </Pressable>
+          );
+        })}
+      </Card>
     </View>
   );
 }
@@ -64,7 +67,7 @@ export default function Settings() {
   ];
 
   return (
-    <Screen title={t('tabs.settings')}>
+    <Screen title={t('tabs.settings')} start={<Menu current="/settings" />}>
       <ScrollView contentContainerStyle={styles.content}>
         <Choices label={t('settings.language')} options={languageOptions} value={settings.language} onChange={(language) => void update({ language })} />
         <Choices label={t('settings.theme')} options={themeOptions} value={settings.theme} onChange={(theme) => void update({ theme })} />
@@ -73,14 +76,14 @@ export default function Settings() {
             {t('settings.noScreenLock')}
           </AppText>
         )}
-        <View style={styles.group} accessible accessibilityLabel={t('settings.versionValue', { version })}>
-          <AppText variant="label" color="onSurfaceVariant">
-            {t('settings.version')}
+        <View style={styles.version} accessible accessibilityLabel={t('settings.versionValue', { version })}>
+          <AppText color="onSurfaceVariant">{t('settings.version')}</AppText>
+          <AppText color="onSurfaceVariant" selectable>
+            {version}
           </AppText>
-          <AppText>{version}</AppText>
         </View>
         {state === 'failed' ? <StateView kind="error" title={t('common.error')} retryLabel={t('common.retry')} onRetry={() => void leave()} /> : null}
-        <Button label={t('settings.signOut')} variant="tonal" busy={state === 'busy'} onPress={() => void leave()} />
+        <Button label={t('settings.signOut')} variant="outline" busy={state === 'busy'} onPress={() => void leave()} />
       </ScrollView>
     </Screen>
   );
@@ -89,8 +92,10 @@ export default function Settings() {
 const styles = StyleSheet.create({
   content: { gap: spacing.lg, paddingBottom: spacing.xl },
   group: { gap: spacing.xs },
-  option: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md },
+  heading: { paddingHorizontal: spacing.xs },
+  version: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs },
+  option: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  warning: { padding: spacing.md, borderRadius: radius.md },
+  warning: { padding: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   dot: { width: 10, height: 10, borderRadius: radius.full },
 });

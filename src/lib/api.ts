@@ -1,13 +1,30 @@
 import {
+  AgentListResultV1,
+  ApprovePlanCommandPayloadV1,
   BudgetMonthV1,
+  CancelRunCommandPayloadV1,
+  CancelTaskCommandPayloadV1,
   ConversationThreadResultV1,
+  EditPlanCommandPayloadV1,
   Id,
   MessageIntent,
+  ModelListResultV1,
+  PauseRunCommandPayloadV1,
   PostOwnerMessageCommandPayloadV1,
   ProblemJson,
+  ReassignSubtaskCommandPayloadV1,
+  RejectPlanCommandPayloadV1,
+  ResolveCheckpointCommandPayloadV1,
+  ResumeRunCommandPayloadV1,
+  RetrySubtaskCommandPayloadV1,
   SetBudgetCommandPayloadV1,
+  SetTaskModeCommandPayloadV1,
+  TaskDetailV1,
   TaskListResultV1,
+  TaskOutputV1,
   WsLimits,
+  type ModelListItemV1,
+  type ReasoningEffort,
   type Timestamp,
 } from '@famashines/ai-systems-contracts';
 import { z } from 'zod';
@@ -19,6 +36,7 @@ export const fetchTimeoutMs = 15_000;
 export const pageSize = 50;
 export const sendAttempts = 4;
 export const taskTextMax = 20_000;
+export const modelsRetryMs = 2_000;
 
 export type ApiErrorKind = 'network' | 'unauthorized' | 'rateLimited' | 'unavailable' | 'rejected';
 
@@ -37,6 +55,25 @@ const PostedAnswer = z.object({ conversationId: Id, messageId: Id, intent: Messa
 export type Posted = z.infer<typeof PostedAnswer>;
 
 const BudgetVersion = z.object({ version: z.int().min(1) });
+const Accepted = z.object({ taskId: Id, version: z.int().min(1) });
+
+export const controls = {
+  'approve-plan': ApprovePlanCommandPayloadV1,
+  'edit-plan': EditPlanCommandPayloadV1,
+  'reject-plan': RejectPlanCommandPayloadV1,
+  'pause-run': PauseRunCommandPayloadV1,
+  'resume-run': ResumeRunCommandPayloadV1,
+  'cancel-run': CancelRunCommandPayloadV1,
+  'cancel-task': CancelTaskCommandPayloadV1,
+  'retry-subtask': RetrySubtaskCommandPayloadV1,
+  'reassign-subtask': ReassignSubtaskCommandPayloadV1,
+  'set-task-mode': SetTaskModeCommandPayloadV1,
+  'resolve-checkpoint': ResolveCheckpointCommandPayloadV1,
+};
+export type ControlName = keyof typeof controls;
+export type ControlBody<N extends ControlName> = Omit<z.input<(typeof controls)[N]>, 'taskId'>;
+
+export type Choice = { model?: string; effort?: ReasoningEffort };
 
 export type Page = { before?: Timestamp; beforeId?: Id };
 type Wait = (kind: 'rateLimited' | 'unavailable') => void;
@@ -114,10 +151,49 @@ async function withRetry<T>(once: () => Promise<T>, onWait: Wait): Promise<T> {
   }
 }
 
-export async function postMessage(conversationId: string, text: string, newTask: boolean, key: string, onWait: Wait = () => {}): Promise<Posted> {
-  const payload = PostOwnerMessageCommandPayloadV1.safeParse({ conversationId, text, newTask });
+export async function postMessage(conversationId: string, text: string, newTask: boolean, key: string, onWait: Wait = () => {}, taskId?: string, choice: Choice = {}): Promise<Posted> {
+  const payload = PostOwnerMessageCommandPayloadV1.safeParse({ conversationId, text, newTask, ...(taskId ? { taskId } : choice) });
   if (!payload.success) throw new ApiError('rejected');
-  return withRetry(() => post(`/api/conversations/${payload.data.conversationId}/messages`, { text: payload.data.text, newTask: payload.data.newTask }, key, PostedAnswer), onWait);
+  const { conversationId: _id, ...body } = payload.data;
+  return withRetry(() => post(`/api/conversations/${payload.data.conversationId}/messages`, body, key, PostedAnswer), onWait);
+}
+
+export async function control<N extends ControlName>(taskId: string, name: N, body: ControlBody<N>, key: string, onWait: Wait = () => {}): Promise<number> {
+  const payload = controls[name].safeParse({ ...body, taskId });
+  if (!payload.success) throw new ApiError('rejected');
+  const { taskId: _id, ...rest } = payload.data as { taskId: string };
+  const accepted = await withRetry(() => post(`/api/tasks/${taskId}/${name}`, rest, key, Accepted), onWait);
+  if (accepted.taskId !== taskId) throw new ApiError('unavailable');
+  return accepted.version;
+}
+
+export function getTask(taskId: string): Promise<TaskDetailV1> {
+  return request(`/api/tasks/${Id.parse(taskId)}`, { method: 'GET' }, TaskDetailV1);
+}
+
+export async function getOutput(taskId: string, subtaskId?: string): Promise<string | null> {
+  const path = subtaskId ? `/api/tasks/${Id.parse(taskId)}/subtasks/${Id.parse(subtaskId)}/output` : `/api/tasks/${Id.parse(taskId)}/output`;
+  try {
+    return (await request(path, { method: 'GET' }, TaskOutputV1)).text;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export function listAgents(): Promise<AgentListResultV1> {
+  return request('/api/agents', { method: 'GET' }, AgentListResultV1);
+}
+
+export async function listModels(waitMs = modelsRetryMs): Promise<ModelListItemV1[]> {
+  const once = async () => (await request('/api/models', { method: 'GET' }, ModelListResultV1)).items;
+  try {
+    return await once();
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.kind !== 'unavailable') throw error;
+    await sleep(waitMs);
+    return once();
+  }
 }
 
 function pageQuery(page: Page): URLSearchParams {

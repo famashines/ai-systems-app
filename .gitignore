@@ -22,6 +22,3 @@ google-services.json
 
 expo-env.d.ts
 # @end expo-cli
-goldie/out/
-.argent/recordings/
-.argent/secrets.env

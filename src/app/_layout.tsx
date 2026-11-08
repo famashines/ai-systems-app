@@ -41,6 +41,7 @@ function Shell() {
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
           <Stack.Protected guard={status === 'signedIn'}>
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="task/[id]" />
           </Stack.Protected>
           <Stack.Protected guard={status !== 'signedIn'}>
             <Stack.Screen name="login" />

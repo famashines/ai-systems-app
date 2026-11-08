@@ -1,4 +1,4 @@
-import type { ClientMessageV1, ServerMessageV1, TaskStatus } from '@famashines/ai-systems-contracts';
+import { TaskDetailV1, type ClientMessageV1, type ServerMessageV1, type TaskStatus } from '@famashines/ai-systems-contracts';
 
 export class FakeSocket {
   static readonly CONNECTING = 0;
@@ -95,4 +95,32 @@ export const ids = {
 
 export function task(taskId: string, rev: number, title = `Task ${taskId.slice(0, 1)}`, createdAt = '2026-10-31T10:00:00.000Z', status: TaskStatus = 'submitted') {
   return { taskId, title, status, createdAt, updatedAt: createdAt, rev, asOf: rev };
+}
+
+export const subtaskIds = ['e5555555-5555-4555-8555-555555555555', 'f6666666-6666-4666-8666-666666666666', '97777777-7777-4777-8777-777777777777'];
+export const agentIds = ['a8888888-8888-4888-8888-888888888888', 'b9999999-9999-4999-8999-999999999999'];
+
+export function detail(change: Partial<TaskDetailV1> = {}): TaskDetailV1 {
+  return TaskDetailV1.parse({
+    taskId: ids.taskA,
+    title: 'Plan the week',
+    status: 'awaiting_approval',
+    mode: 'approval',
+    createdAt: '2026-11-01T10:00:00.000Z',
+    updatedAt: '2026-11-01T10:00:00.000Z',
+    plan: {
+      planVersion: 1,
+      subtasks: [
+        { subtaskId: subtaskIds[0], title: 'Facts', instructions: 'Find the facts.', agentId: agentIds[0], dependsOn: [], needsApproval: false, estimatedCostMicroUsd: 2_000, estimatedDurationMs: 30_000 },
+        { subtaskId: subtaskIds[1], title: 'Summary', instructions: 'Write the summary.', agentId: agentIds[1], dependsOn: [subtaskIds[0]], needsApproval: true, estimatedCostMicroUsd: 15_000, estimatedDurationMs: 120_000 },
+      ],
+    },
+    currentCall: null,
+    subtasks: [],
+    checkpoints: [],
+    costMicroUsd: 0,
+    rev: 1,
+    asOf: 1,
+    ...change,
+  });
 }

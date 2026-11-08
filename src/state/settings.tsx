@@ -1,3 +1,4 @@
+import type { ReasoningEffort } from '@famashines/ai-systems-contracts';
 import { reloadAppAsync } from 'expo';
 import { useLocales } from 'expo-localization';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -11,11 +12,11 @@ import { darkColors, lightColors, type Colors } from '@/theme';
 
 export type ThemeChoice = 'system' | 'light' | 'dark';
 export type LanguageChoice = Language | 'system';
-export type Settings = { language: LanguageChoice; theme: ThemeChoice };
+export type Settings = { language: LanguageChoice; theme: ThemeChoice; model: string | null; effort: ReasoningEffort | null };
 
 const settingsKey = 'settings';
 const reloadKey = 'rtlReload';
-const defaults: Settings = { language: 'system', theme: 'system' };
+const defaults: Settings = { language: 'system', theme: 'system', model: null, effort: null };
 
 type Value = {
   settings: Settings;

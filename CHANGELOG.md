@@ -9,6 +9,103 @@
 - `goldie/goldie.config.ts` and the argent flows `.argent/flows/store-0*.yaml`
   that capture and frame them. docs/release.md has the steps.
 
+### Added (over-the-air updates)
+
+- `expo-updates` with EAS Update on the channel `production` (ADR 0033). A
+  JS-only change goes out with `npm run ota`. Updates reach only builds of
+  the same version, from 1.6.0.
+- `npm run ota` stops when the native fingerprint differs from
+  `.github/last-release-fingerprint`. `npm run aab` writes this file.
+- `PRIVACY.md` and the Data safety answers name `u.expo.dev`, the update
+  client id and the error text of a failed start. `PRIVACY.md` no longer lists the conversation id as stored.
+
+### Changed (composer and new conversation at start)
+
+- The chat composer has two rows: the input on the full width, then the
+  New task switch, the model chip and the send button. The placeholder
+  stays on one line. The composer is a rounded box, not a pill.
+- Each start of the app, and each sign-in, opens a new conversation. Tasks
+  of the old chat stay in the Tasks list.
+
+### Changed (model choice and Fama AI brand)
+
+- Auto is gone from the model and effort lists. Choose a model from the
+  list to send a new message. A reply to a task needs no model.
+- A chosen model starts at its default effort. The app sends that effort.
+- A rail of nodes and edges, low to high, replaces the effort chips.
+- The model and effort sheet has a handle. Drag it down or tap it to close
+  the sheet. A short drag springs back.
+- The colours are the Fama AI tokens of `logo-master/SPEC.md` again. The
+  mark shows in the side menu, on login, on the lock screen and in an
+  empty chat. The splash colour needs a native release.
+
+### Changed (new chat)
+
+- The pencil in the chat header starts a new chat. It clears the thread and
+  starts a new conversation. Tasks of the old chat stay in the Tasks list.
+
+### Added (model and effort for a task)
+
+- The chat composer is one pill-shaped row: the New task switch (a task
+  icon in place of the text), the input ("Message Fama AI..."), the model
+  chip and a round send button.
+- The model chip opens a picker with a search field, the models that the
+  API key can use (`GET /api/models`), and the reasoning efforts of the
+  chosen model.
+- A new message with no `taskId` sends `model` and `effort`. A reply to a
+  task never sends them.
+- The choice is kept in the settings. A model that is no longer in the
+  list shows as Auto.
+- The task screen shows the model and the effort of the task.
+- When the model list does not load (503), the app reads it one more
+  time after 2 s, and again when the picker opens.
+- Contracts v0.5.0.
+
+### Changed (calm chat look and side menu)
+
+- New warm colours: a cream background in the light theme, a warm dark
+  gray in the dark theme, and one terracotta accent for the main actions.
+  All text pairs keep WCAG AA contrast (`npm run contrast`).
+- The bottom tab bar is gone. A header with a menu button opens a side
+  menu with Chat, Tasks, Budget, Settings and the recent tasks. In Urdu
+  the menu comes from the right.
+- Chat: agent replies show as plain text with no bubble, your messages
+  show in a soft bubble at the end side. The composer is a rounded card
+  with a multiline field, the New task switch and a round send button. A
+  header action turns on New task.
+- Quiet secondary buttons (outlined), cards with thin borders, list rows
+  with thin dividers, and smaller muted metadata on all screens.
+
+### Added (tasks, plans and owner controls, M3-08)
+
+- The task screen (`/task/<taskId>`, from the task list and the chat):
+  status, mode, cost, the plan as a DAG in steps, the subtask states,
+  checkpoints, the live text of the running subtask and of the current
+  orchestrator call, the subtask outputs, the timeline and the result.
+- Plan preview in the chat with Approve plan, Edit plan and Reject plan.
+  The plan editor changes the title, instructions, agent, dependencies,
+  order and approval rule of each subtask, and adds or removes subtasks.
+- Owner controls: pause, resume, cancel run, cancel task, retry subtask,
+  change agent, auto-run switch, and approve or refuse a checkpoint. Each
+  action has its own `Idempotency-Key`, and 409, 400 and 503 have their
+  own texts.
+- Reply to a task in the chat: the next message has the `taskId` of that
+  task.
+- Contracts v0.4.1.
+- Push deferred (owner decision).
+
+### Fixed (keyboard and permissions)
+
+- On Android the keyboard covered the chat input and the Send button.
+  With edge-to-edge, `adjustResize` does not make the window smaller.
+  `Screen` now puts a `KeyboardAvoidingView` (`padding`) around each
+  screen, so the content moves above the keyboard.
+- `android.permission.USE_FINGERPRINT` is blocked. The app needs
+  Android 10 or later (`minSdkVersion` 29). On these versions
+  `expo-local-authentication` uses `androidx.biometric`
+  (`BiometricPrompt`), which needs `USE_BIOMETRIC` only.
+  `USE_FINGERPRINT` is deprecated since API level 28.
+
 ### Changed (app name Fama AI)
 
 - The app name is `Fama AI` (launcher label, in-app text, lock screen

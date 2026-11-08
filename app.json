@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fama AI",
     "slug": "ai-systems",
-    "version": "1.0.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "com.famashines.ai",
@@ -19,7 +19,8 @@
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
-        "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
+        "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE",
+        "android.permission.USE_FINGERPRINT"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#2F5BB7",
@@ -68,6 +69,9 @@
     },
     "runtimeVersion": {
       "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/93c54469-d828-422d-8ec2-5c053aa18404"
     },
     "extra": {
       "eas": {

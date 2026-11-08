@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Screen } from '@/components/ui';
+import { AppText, Button, Mark, Screen } from '@/components/ui';
 import { IssuerUnreachableError } from '@/lib/auth';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
@@ -27,8 +27,15 @@ export default function Login() {
   return (
     <Screen title={t('app.name')}>
       <View style={styles.body}>
-        <AppText variant="headline">{t('login.title')}</AppText>
-        <AppText color="onSurfaceVariant">{t('login.body')}</AppText>
+        <View style={styles.mark}>
+          <Mark size={120} />
+        </View>
+        <AppText variant="headline" style={styles.center}>
+          {t('login.title')}
+        </AppText>
+        <AppText color="onSurfaceVariant" style={styles.center}>
+          {t('login.body')}
+        </AppText>
         {ended && state === 'idle' ? (
           <AppText color="error" accessibilityRole="alert" accessibilityLiveRegion="polite">
             {t(ended === 'refused' ? 'login.refused' : 'login.ended')}
@@ -50,5 +57,7 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  body: { flex: 1, justifyContent: 'center', gap: spacing.md },
+  body: { flex: 1, justifyContent: 'center', gap: spacing.md, paddingBottom: spacing.xl },
+  mark: { alignItems: 'center' },
+  center: { textAlign: 'center' },
 });

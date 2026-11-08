@@ -138,6 +138,8 @@ centre (the feature graphic uses the lockup, section 6).
 | `assets/images/adaptive-icon-monochrome.png` | 1024 x 1024 RGBA | 7 | `#FFFFFF` (Android themed icon tints it) | same safe circle |
 | `assets/images/splash-icon-light.png` | 1152 x 1152 RGBA | 7 | `#2F5BB7` | reach 298.8 px <= 384 px (192 dp circle at 4 px for each dp) |
 | `assets/images/splash-icon-dark.png` | 1152 x 1152 RGBA | 7 | `#B0C6FF` | same |
+| `assets/images/mark-light.png` | 288 x 288 RGBA | 3 | `#2F5BB7` | reach 128 px <= 144 px (in-app mark) |
+| `assets/images/mark-dark.png` | 288 x 288 RGBA | 3 | `#B0C6FF` | same |
 | `play-store-assets/app-icon-512.png` | 512 x 512 RGBA (32-bit, opaque) | 4 | badge, two-colour mark | badge corners, < 1 MB |
 | `play-store-assets/feature-graphic.png` | 1024 x 500 RGB (24-bit) | 3.4 | badge, two-colour lockup | badge corners, < 1 MB |
 

@@ -16,6 +16,7 @@ export const lightColors = {
   onErrorContainer: '#410E0B',
   outline: '#74777F',
   outlineVariant: '#C4C6D0',
+  scrim: '#00000066',
 };
 
 export type Colors = typeof lightColors;
@@ -36,20 +37,31 @@ export const darkColors: Colors = {
   onErrorContainer: '#FFDAD6',
   outline: '#8E9099',
   outlineVariant: '#44474F',
+  scrim: '#00000099',
 };
 
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 } as const;
 
-export const radius = { sm: 8, md: 12, lg: 16, full: 999 } as const;
+export const radius = { sm: 8, md: 12, lg: 16, xl: 24, full: 999 } as const;
+
+export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)' } as const;
 
 export const touchTarget = 48;
 
+export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
+
+export const readingWidth = 720;
+
+export const drawerWidth = 304;
+
+export const motion = { open: 240 } as const;
+
 export const type = {
-  headline: { fontSize: 24, lineHeight: 32, fontWeight: '400' },
-  title: { fontSize: 22, lineHeight: 28, fontWeight: '400' },
+  headline: { fontSize: 26, lineHeight: 34, fontWeight: '600' },
+  title: { fontSize: 18, lineHeight: 24, fontWeight: '600' },
   label: { fontSize: 14, lineHeight: 20, fontWeight: '500', letterSpacing: 0.1 },
-  body: { fontSize: 16, lineHeight: 24, fontWeight: '400' },
-  bodySmall: { fontSize: 14, lineHeight: 20, fontWeight: '400' },
+  body: { fontSize: 16, lineHeight: 26, fontWeight: '400' },
+  bodySmall: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
 } as const satisfies Record<string, TextStyle>;
 
 function luminance(hex: string): number {

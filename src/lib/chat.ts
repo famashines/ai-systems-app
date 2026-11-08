@@ -37,6 +37,10 @@ export function streamText(stream: Stream): string {
     .join('\n\n');
 }
 
+export function callText(streams: Streams, taskId: string, callId: string): string {
+  return Object.values(streams[taskId]?.calls[callId]?.parts ?? {}).join('');
+}
+
 export function applyDelta(streams: Streams, { taskId, callId, attempt, i, text }: Delta): Streams {
   const stream = streams[taskId] ?? { calls: {}, hidden: false };
   const call = stream.calls[callId];
@@ -116,8 +120,13 @@ export function visibleStreams(streams: Streams, status: (taskId: string) => Tas
     .reverse();
 }
 
-export function chatTopics(conversationId: string, newestFirst: { role: 'owner' | 'agent'; taskId?: string }[], status: (taskId: string) => TaskStatus | undefined): Topic[] {
-  const latest = new Map<string, 'owner' | 'agent'>();
+export function chatTopics(
+  conversationId: string,
+  newestFirst: { role: 'owner' | 'agent'; taskId?: string }[],
+  status: (taskId: string) => TaskStatus | undefined,
+  watched: string[] = [],
+): Topic[] {
+  const latest = new Map<string, 'owner' | 'agent'>(watched.map((taskId) => [taskId, 'owner']));
   for (const { role, taskId } of newestFirst) if (taskId && !latest.has(taskId)) latest.set(taskId, role);
   const open = [...latest]
     .filter(([taskId, role]) => {
