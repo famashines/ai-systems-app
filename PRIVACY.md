@@ -16,7 +16,7 @@ goes.
 | Access token of your login | App memory only | When the app stops, or at sign-out |
 | Settings: language and theme | Local SQLite database `cache.db` | When you remove the app or clear its data |
 | Recent task list: task id, title, status and times, at most 200 tasks | Local SQLite database `cache.db` | At sign-out |
-| Update client id: a random id that the update service gives to this install | Android app storage (`dev.expo.EASSharedPreferences`) | When you remove the app or clear its data |
+| Update client id: a random id that the app makes for this install | Android app storage (`dev.expo.EASSharedPreferences`) | When you remove the app or clear its data |
 | App updates: the app code and images of the last update | Android app storage | When a newer update comes, when you remove the app, or when you clear its data |
 
 The chat thread, the conversation id and the budget are not kept on the
@@ -39,11 +39,14 @@ The app connects only to these servers, and only with https and wss:
 - `ai.famashines.com`: the ai-systems server. The app sends the chat text
   that you write, your task commands, and your budget settings. The server
   sends back the tasks, the replies of the agents, and the cost.
-- `u.expo.dev`: EAS Update by Expo, the update service of the app. At each
-  start, the app asks for a new version of its code. The request has the
-  platform (android), the app version, the update channel, the ids of the
-  installed updates, and the update client id. It has no account data and no
-  chat text.
+- `u.expo.dev` and the Expo file servers: EAS Update by Expo, the update
+  service of the app. At each start, the app asks for a new version of its
+  code. The request has the platform (android), the app version, the update
+  channel, the ids of the installed updates and of updates that failed, and
+  the update client id. If the app could not start the last time, the
+  request also has the error text of that start (at most 1024 characters),
+  so that the service does not send a bad update again. The request has no
+  account data and no chat text.
 
 The server sends the chat text to large language models through
 OpenRouter, to make the agent replies. The requests deny data collection by

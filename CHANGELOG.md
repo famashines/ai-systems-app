@@ -9,8 +9,8 @@
   the same version, from 1.6.0.
 - `npm run ota` stops when the native fingerprint differs from
   `.github/last-release-fingerprint`. `npm run aab` writes this file.
-- `PRIVACY.md` and the Data safety answers name `u.expo.dev` and the update
-  client id. `PRIVACY.md` no longer lists the conversation id as stored.
+- `PRIVACY.md` and the Data safety answers name `u.expo.dev`, the update
+  client id and the error text of a failed start. `PRIVACY.md` no longer lists the conversation id as stored.
 
 ### Changed (composer and new conversation at start)
 

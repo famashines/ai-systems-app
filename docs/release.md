@@ -107,6 +107,7 @@ The answers come from `PRIVACY.md`. Change both together.
 | Personal info: User IDs | Collected, not shared. Required. Purpose: app functionality, account management. |
 | Messages: Other in-app messages (the chat text) | Collected, not shared. Required. Purpose: app functionality. |
 | Device or other IDs (the update client id of EAS Update) | Collected, not shared. Required. Purpose: app functionality. |
+| App info and performance: Crash logs (the error text of a failed start, sent to EAS Update) | Collected, not shared. Required. Purpose: app functionality. |
 | All other data types | Not collected. |
 
 The server sends the chat text to model providers through OpenRouter, as
@@ -157,7 +158,9 @@ release. After the app is published, remove the variable.
 
 Do these steps on your own machine.
 
-1. Update `main`: `git switch main && git pull --rebase origin main`.
+1. Update `main`: `git switch main && git pull --rebase origin main && npm ci`.
+   `npm run aab` writes the fingerprint from `node_modules`, so it must
+   match the lock file.
 2. Pick the bump from the conventional commit types since the last
    release: `major` for a breaking change, `minor` for a `feat`, `patch`
    for the other types. Then:
@@ -201,9 +204,13 @@ updates.
 change since the last store release      release
 ---------------------------------------  -------------------------------
 only src/, assets that JS imports         npm run ota
-a dependency, app.json, a plugin,         native release (section 5)
-eas.json, package.json scripts
+a native dependency, app.json, a plugin,  native release (section 5)
+the icon or splash images, .gitignore,
+the scripts of package.json
 ```
+
+These are the sources of the native fingerprint. `eas.json` is not one:
+check a change to it by hand.
 
 1. Merge the change to `main`. Do not bump the version: a new version is
    a new runtime, and no installed build gets the update.
