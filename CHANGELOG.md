@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added (over-the-air updates)
+
+- `expo-updates` with EAS Update on the channel `production` (ADR 0033). A
+  JS-only change goes out with `npm run ota`. Updates reach only builds of
+  the same version, from 1.6.0.
+- `npm run ota` stops when the native fingerprint differs from
+  `.github/last-release-fingerprint`. `npm run aab` writes this file.
+- `PRIVACY.md` and the Data safety answers name `u.expo.dev` and the update
+  client id. `PRIVACY.md` no longer lists the conversation id as stored.
+
 ### Changed (composer and new conversation at start)
 
 - The chat composer has two rows: the input on the full width, then the
