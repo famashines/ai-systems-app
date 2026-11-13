@@ -35,7 +35,8 @@ export const titleMax = 80;
 export const autoTitleMax = 40;
 export const titleInputMax = 2000;
 const chatKey = (chatId: string) => `direct.chat.${chatId}`;
-const bookmarksFirst = (items: ChatSummary[]) => [...items.filter((item) => item.bookmarked), ...items.filter((item) => !item.bookmarked)];
+const newestFirst = (items: ChatSummary[]) => [...items].sort((a, b) => b.updatedAt - a.updatedAt);
+const bookmarksFirst = (items: ChatSummary[]) => [...newestFirst(items.filter((item) => item.bookmarked)), ...newestFirst(items.filter((item) => !item.bookmarked))];
 
 const StreamEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('delta'), text: z.string() }),
@@ -170,9 +171,11 @@ export function createDirectStore(
     const first = messages.find((message) => message.role === 'user');
     if (!chatId || !first) return;
     const old = state.history.find((item) => item.chatId === chatId);
-    const history = bookmarksFirst([{ ...old, chatId, title: old?.title ?? autoTitle(first.text), updatedAt: now() }, ...state.history.filter((item) => item.chatId !== chatId)]);
-    const dropped = history.slice(historyMax);
-    set({ ...state, history: history.slice(0, historyMax) });
+    const current: ChatSummary = { ...old, chatId, title: old?.title ?? autoTitle(first.text), updatedAt: now() };
+    const others = bookmarksFirst(state.history.filter((item) => item.chatId !== chatId));
+    const kept = others.slice(0, historyMax - 1);
+    const dropped = others.slice(historyMax - 1);
+    set({ ...state, history: bookmarksFirst([current, ...kept]) });
     void Promise.all([
       storage.setItem(chatKey(chatId), messages),
       storage.setItem(historyKey, state.history),

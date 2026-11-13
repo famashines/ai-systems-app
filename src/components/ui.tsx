@@ -4,7 +4,7 @@ import { ActivityIndicator, Image, KeyboardAvoidingView, Pressable, StyleSheet, 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSettings } from '@/state/settings';
-import { headerHeight, radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
+import { control, headerHeight, radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
 
 export function AppText({ variant = 'body', color = 'onSurface', style, ...props }: TextProps & { variant?: keyof typeof type; color?: keyof Colors }) {
   const { colors } = useSettings();
@@ -47,7 +47,7 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      hitSlop={compact ? (touchTarget - compactButton) / 2 : undefined}
+      hitSlop={compact ? (touchTarget - control.compactButton) / 2 : undefined}
       android_ripple={{ color: colors.outlineVariant, borderless: !filled }}
       style={({ pressed }) => [
         styles.iconButton,
@@ -146,8 +146,6 @@ export function StateView(props: StateProps) {
   );
 }
 
-const compactButton = 36;
-
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', minHeight: headerHeight, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
@@ -157,7 +155,7 @@ const styles = StyleSheet.create({
   title: { flex: 1, textAlign: 'center' },
   body: { flex: 1, width: '100%', maxWidth: readingWidth, alignSelf: 'center', paddingHorizontal: spacing.md, gap: spacing.md },
   iconButton: { width: touchTarget, height: touchTarget, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  compact: { width: compactButton, height: compactButton, margin: (touchTarget - compactButton) / 2 },
+  compact: { width: control.compactButton, height: control.compactButton, margin: (touchTarget - control.compactButton) / 2 },
   button: {
     minHeight: touchTarget,
     minWidth: touchTarget,

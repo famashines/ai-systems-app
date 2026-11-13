@@ -5,7 +5,7 @@ import * as auth from '@/lib/auth';
 import { config } from '@/lib/config';
 
 export const fetchTimeoutMs = 15_000;
-export const titleTimeoutMs = 30_000;
+export const titleTimeoutMs = 35_000;
 export const sendAttempts = 4;
 export const messageTextMax = 20_000;
 export const modelsRetryMs = 2_000;

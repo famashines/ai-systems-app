@@ -3,6 +3,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { Animated, I18nManager, Keyboard, Modal, PanResponder, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { askDelete } from '@/components/chat-menu';
 import { AppText, Icon, IconButton, Mark, type IconName } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { direct, type ChatSummary } from '@/lib/direct';
@@ -15,6 +16,7 @@ type Section = '/budget' | '/settings';
 const swipeWidth = 80;
 const swipeSlop = 8;
 const swipeSpeed = 0.5;
+let openRow: (() => void) | null = null;
 
 const sections: [Section, Key, IconName][] = [
   ['/budget', 'tabs.budget', { ios: 'dollarsign.circle', android: 'savings', web: 'savings' }],
@@ -36,8 +38,12 @@ function ChatRow({ item, selected, onOpen }: { item: ChatSummary; selected: bool
   const [swipe] = useState(() => {
     const toward = I18nManager.isRTL ? 1 : -1;
     let open = false;
+    const shut = () => settle(false);
     const settle = (next: boolean) => {
       open = next;
+      if (next && openRow !== shut) openRow?.();
+      if (next) openRow = shut;
+      else if (openRow === shut) openRow = null;
       setShown(next);
       Animated.spring(x, { toValue: next ? toward * swipeWidth : 0, useNativeDriver: true, bounciness: 0 }).start();
     };
@@ -51,7 +57,10 @@ function ChatRow({ item, selected, onOpen }: { item: ChatSummary; selected: bool
     });
     return { handlers: responder.panHandlers, settle, isOpen: () => open };
   });
-  const remove = () => direct.remove(item.chatId);
+  const remove = () => {
+    swipe.settle(false);
+    askDelete(t, item.chatId);
+  };
   const deleteLabel = t('drawer.chatDelete', { title: item.title });
 
   return (

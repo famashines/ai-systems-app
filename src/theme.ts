@@ -54,6 +54,8 @@ export const touchTarget = 48;
 
 export const headerHeight = 56;
 
+export const control = { chip: 32, compactButton: 36, dot: 3, menuMin: 220, menuMax: 280 } as const;
+
 export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
 
 export const readingWidth = 720;

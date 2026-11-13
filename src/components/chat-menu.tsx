@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useRef, useState, type ComponentRef } from 'react';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText, Button, Icon, IconButton, type IconName } from '@/components/ui';
 import { direct, titleMax, type ChatSummary } from '@/lib/direct';
 import { useSettings } from '@/state/settings';
-import { headerHeight, radius, readingWidth, shadow, spacing, touchTarget, type } from '@/theme';
+import { control, headerHeight, radius, readingWidth, shadow, spacing, touchTarget, type } from '@/theme';
 
 function Item({ icon, label, danger = false, onPress }: { icon: IconName; label: string; danger?: boolean; onPress: () => void }) {
   const { colors } = useSettings();
@@ -17,17 +17,25 @@ function Item({ icon, label, danger = false, onPress }: { icon: IconName; label:
   );
 }
 
+export function askDelete(t: ReturnType<typeof useSettings>['t'], chatId: string) {
+  Alert.alert(t('chat.deleteTitle'), t('chat.deleteBody'), [
+    { text: t('common.cancel'), style: 'cancel' },
+    { text: t('chat.delete'), style: 'destructive', onPress: () => direct.remove(chatId) },
+  ]);
+}
+
 function RenameDialog({ chat, onClose }: { chat: ChatSummary; onClose: () => void }) {
   const { t, colors } = useSettings();
   const [name, setName] = useState(chat.title);
+  const input = useRef<ComponentRef<typeof TextInput>>(null);
   const ok = name.trim() !== '';
   const save = () => {
     if (!ok) return;
-    direct.rename(chat.chatId, name);
+    if (name.trim() !== chat.title) direct.rename(chat.chatId, name);
     onClose();
   };
   return (
-    <Modal testID="rename-dialog" visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+    <Modal testID="rename-dialog" visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onShow={() => input.current?.focus()} onRequestClose={onClose}>
       <Pressable accessible={false} importantForAccessibility="no" onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
       <KeyboardAvoidingView behavior="padding" pointerEvents="box-none" style={styles.center}>
         <View accessibilityViewIsModal style={[styles.dialog, { backgroundColor: colors.surfaceContainerHigh }]}>
@@ -35,11 +43,11 @@ function RenameDialog({ chat, onClose }: { chat: ChatSummary; onClose: () => voi
             {t('chat.renameTitle')}
           </AppText>
           <TextInput
+            ref={input}
             testID="rename-input"
             value={name}
             onChangeText={setName}
             onSubmitEditing={save}
-            autoFocus
             selectTextOnFocus
             maxLength={titleMax}
             returnKeyType="done"
@@ -66,15 +74,17 @@ export function ChatMenu({ chat }: { chat: ChatSummary }) {
   const close = () => setOpen(false);
   const confirmDelete = () => {
     close();
-    Alert.alert(t('chat.deleteTitle'), t('chat.deleteBody'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: t('chat.delete'), style: 'destructive', onPress: () => direct.remove(chat.chatId) },
-    ]);
+    askDelete(t, chat.chatId);
   };
 
   return (
     <>
-      <IconButton testID="chat-menu" icon={{ ios: 'ellipsis', android: 'more_vert', web: 'more_vert' }} label={t('chat.more')} onPress={() => setOpen(true)} />
+      <IconButton testID="chat-menu" icon={{ ios: 'ellipsis', android: 'more_vert', web: 'more_vert' }} label={t('chat.more')}
+        onPress={() => {
+          Keyboard.dismiss();
+          setOpen(true);
+        }}
+      />
       <Modal testID="chat-menu-panel" visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
         <Pressable accessible={false} importantForAccessibility="no" onPress={close} style={StyleSheet.absoluteFill} />
         <View accessibilityRole="menu" accessibilityViewIsModal style={[styles.menu, { top: top + headerHeight, backgroundColor: colors.surfaceContainerHigh }]}>
@@ -106,7 +116,7 @@ export function ChatMenu({ chat }: { chat: ChatSummary }) {
 }
 
 const styles = StyleSheet.create({
-  menu: { position: 'absolute', end: spacing.sm, minWidth: 220, maxWidth: 280, paddingVertical: spacing.xs, borderRadius: radius.md, boxShadow: shadow.menu, overflow: 'hidden' },
+  menu: { position: 'absolute', end: spacing.sm, minWidth: control.menuMin, maxWidth: control.menuMax, paddingVertical: spacing.xs, borderRadius: radius.md, boxShadow: shadow.menu, overflow: 'hidden' },
   heading: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.xs },
   item: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget, paddingHorizontal: spacing.md },
   center: { flex: 1, justifyContent: 'center', padding: spacing.lg },

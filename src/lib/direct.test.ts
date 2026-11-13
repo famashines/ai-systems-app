@@ -283,9 +283,26 @@ describe('the store', () => {
     expect(saved.get('direct.history')).toEqual(store.get().history);
     store.bookmark(one);
     expect(store.get().history.map((item) => [item.title, item.bookmarked])).toEqual([
-      ['Trip plan', false],
       ['Two', undefined],
+      ['Trip plan', false],
     ]);
+  });
+
+  it('never drops the open chat, also when all other chats are bookmarks', async () => {
+    const { store } = setup();
+    for (let i = 0; i < historyMax; i += 1) {
+      store.send(`Saved ${i}`, choice);
+      store.bookmark(store.get().chatId!);
+      store.clear();
+    }
+    store.send('Open chat', choice);
+    const open = store.get().chatId!;
+    await flush();
+    expect(store.get().history).toHaveLength(historyMax);
+    expect(store.get().history.some((item) => item.chatId === open)).toBe(true);
+    store.send('More', choice);
+    await flush();
+    expect(store.get().history.some((item) => item.chatId === open)).toBe(true);
   });
 
   it('asks the model for a title after the first answer, one time, and keeps a rename', async () => {

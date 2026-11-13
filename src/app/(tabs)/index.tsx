@@ -157,10 +157,11 @@ export default function Chat() {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
   const [still, setStill] = useState(false);
+  const [reader, setReader] = useState(false);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const choice = useChoice();
   const needsModel = choice.model === undefined;
-  const chipShown = focused || needsModel;
+  const chipShown = focused || needsModel || reader;
   const canSend = text.trim() !== '' && !needsModel && !chat.busy;
   const summary = chat.history.find((item) => item.chatId === chat.chatId);
   const title = summary?.title ?? t('chat.newChat');
@@ -168,9 +169,12 @@ export default function Chat() {
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setStill);
     const motionSub = AccessibilityInfo.addEventListener('reduceMotionChanged', setStill);
+    void AccessibilityInfo.isScreenReaderEnabled().then(setReader);
+    const readerSub = AccessibilityInfo.addEventListener('screenReaderChanged', setReader);
     const keyboardSub = Keyboard.addListener('keyboardDidHide', () => input.current?.blur());
     return () => {
       motionSub.remove();
+      readerSub.remove();
       keyboardSub.remove();
     };
   }, []);

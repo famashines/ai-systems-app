@@ -9,14 +9,13 @@ import type { Choice as ModelChoice } from '@/lib/api';
 import { useData } from '@/state/data';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
-import { motion, radius, rail, readingWidth, spacing, touchTarget, type } from '@/theme';
+import { control, motion, radius, rail, readingWidth, spacing, touchTarget, type } from '@/theme';
 
 const Sheet = Animated.createAnimatedComponent(SafeAreaView);
 const closeDistance = 120;
 const closeSpeed = 0.8;
 const tapDistance = 4;
-const chipHeight = 32;
-const chipSlop = { top: (touchTarget - chipHeight) / 2, bottom: (touchTarget - chipHeight) / 2 };
+const chipSlop = { top: (touchTarget - control.chip) / 2, bottom: (touchTarget - control.chip) / 2 };
 
 function useDragToClose(onClose: () => void) {
   const [offset] = useState(() => new Animated.Value(0));
@@ -252,8 +251,8 @@ const styles = StyleSheet.create({
   },
   handle: { height: touchTarget, alignItems: 'center', justifyContent: 'center' },
   pill: { width: 36, height: rail.edge, borderRadius: radius.full },
-  chip: { height: chipHeight, minWidth: touchTarget, alignSelf: 'flex-start', marginVertical: (touchTarget - chipHeight) / 2, marginStart: spacing.xs, flexDirection: 'row', gap: spacing.sm - 2, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.md, overflow: 'hidden' },
-  chipDot: { width: 3, height: 3, borderRadius: radius.full },
+  chip: { height: control.chip, minWidth: touchTarget, alignSelf: 'flex-start', marginVertical: (touchTarget - control.chip) / 2, marginStart: spacing.xs, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.md, overflow: 'hidden' },
+  chipDot: { width: control.dot, height: control.dot, borderRadius: radius.full },
   search: { minHeight: touchTarget, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.field, textAlign: 'auto' },
   row: { minHeight: touchTarget + spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.md, overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

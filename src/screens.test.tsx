@@ -329,7 +329,11 @@ describe('App', () => {
       expect(await getItem('direct.history')).not.toBeNull();
       await fireEvent.press(screen.getAllByTestId('menu')[0]!);
       expect(screen.queryByRole('button', { name: 'Delete the chat First question' })).toBeNull();
+      const confirm = jest.spyOn(Alert, 'alert');
       await fireEvent(await screen.findByRole('button', { name: 'Chat: First question' }), 'accessibilityAction', { nativeEvent: { actionName: 'delete' } });
+      expect(screen.getByRole('button', { name: 'Chat: First question' })).toBeOnTheScreen();
+      const choices = confirm.mock.calls.at(-1)![2]!;
+      await act(async () => choices.find((choice) => choice.style === 'destructive')!.onPress!());
       expect(screen.queryByRole('button', { name: 'Chat: First question' })).toBeNull();
       expect(screen.getAllByText('No chats yet.').length).toBeGreaterThan(0);
       expect(screen.queryByText('First answer')).toBeNull();
