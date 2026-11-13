@@ -1,7 +1,7 @@
 import { fetch as streamFetch } from 'expo/fetch';
 
 import * as auth from '@/lib/auth';
-import { createDirectStore, history, parseEvents, statusError, streamChat, type DirectMessage } from '@/lib/direct';
+import { createDirectStore, history, historyMax, parseEvents, statusError, streamChat, type DirectMessage } from '@/lib/direct';
 
 jest.mock('expo/fetch', () => ({ fetch: jest.fn() }));
 jest.mock('@/lib/auth', () => ({ getAccessToken: jest.fn(async () => 'token-1'), refresh: jest.fn(async () => true) }));
@@ -118,12 +118,20 @@ describe('the store', () => {
   function setup() {
     const calls: Call[] = [];
     let n = 0;
-    const store = createDirectStore(
-      (body, signal, delta) => new Promise((end) => calls.push({ body, signal, delta, end })),
-      () => `id-${(n += 1)}`,
-      () => 0,
-    );
-    return { store, calls };
+    const saved = new Map<string, unknown>();
+    const storage = {
+      getItem: async <T,>(key: string) => (saved.has(key) ? { value: JSON.parse(JSON.stringify(saved.get(key))) as T, updatedAt: 0 } : null),
+      setItem: async (key: string, value: unknown) => void saved.set(key, value),
+      removeItem: async (key: string) => void saved.delete(key),
+    };
+    const make = () =>
+      createDirectStore(
+        (body, signal, delta) => new Promise((end) => calls.push({ body, signal, delta, end })),
+        () => `id-${(n += 1)}`,
+        () => n,
+        storage,
+      );
+    return { store: make(), calls, saved, make };
   }
   const choice = { model: 'openai/gpt-5', effort: 'high' as const };
   const flush = () => new Promise((resolve) => setTimeout(resolve, 80));
@@ -134,7 +142,7 @@ describe('the store', () => {
     store.subscribe(() => seen.push(store.get().messages.length));
     store.send('  Hello  ', choice);
     expect(store.get().busy).toBe(true);
-    expect(calls[0]!.body).toEqual({ chatId: 'id-3', model: 'openai/gpt-5', effort: 'high', messages: [{ role: 'user', content: 'Hello' }] });
+    expect(calls[0]!.body).toEqual({ chatId: 'id-1', model: 'openai/gpt-5', effort: 'high', messages: [{ role: 'user', content: 'Hello' }] });
     store.send('Second', choice);
     expect(calls).toHaveLength(1);
     calls[0]!.delta('Hi ');
@@ -150,7 +158,7 @@ describe('the store', () => {
       { role: 'assistant', content: 'Hi there' },
       { role: 'user', content: 'More' },
     ]);
-    expect(calls[1]!.body.chatId).toBe('id-3');
+    expect(calls[1]!.body.chatId).toBe('id-1');
     expect(seen.length).toBeGreaterThan(3);
   });
 
@@ -188,6 +196,70 @@ describe('the store', () => {
     expect(store.get().messages.at(-1)).toMatchObject({ state: 'done', cut: true });
   });
 
+  it('keeps each chat on the phone, newest first, and opens it again after a restart', async () => {
+    const { store, calls, saved, make } = setup();
+    store.send('First chat', choice);
+    calls[0]!.delta('Answer one');
+    calls[0]!.end({ state: 'done', costMicroUsd: 5, cut: false });
+    await flush();
+    const first = store.get().chatId!;
+    store.clear();
+    store.send('Second chat', choice);
+    await flush();
+    const second = store.get().chatId!;
+    expect(store.get().history.map((item) => [item.chatId, item.title])).toEqual([
+      [second, 'Second chat'],
+      [first, 'First chat'],
+    ]);
+    const again = make();
+    expect(again.get().history).toEqual([]);
+    await again.load();
+    expect(again.get().history.map((item) => item.title)).toEqual(['Second chat', 'First chat']);
+    await again.open(second);
+    expect(again.get()).toMatchObject({ chatId: second, busy: false });
+    expect(again.get().messages).toMatchObject([{ text: 'Second chat' }]);
+    await again.open(first);
+    expect(again.get().messages).toMatchObject([{ text: 'First chat' }, { text: 'Answer one', state: 'done', costMicroUsd: 5 }]);
+    again.send('More', choice);
+    expect(calls.at(-1)!.body).toMatchObject({ chatId: first, messages: [{ content: 'First chat' }, { content: 'Answer one' }, { content: 'More' }] });
+    expect(again.get().history[0]!.chatId).toBe(first);
+    await again.open('unknown');
+    expect(again.get().chatId).toBe(first);
+    expect(saved.size).toBe(3);
+  });
+
+  it('remove deletes one chat, and forget deletes all', async () => {
+    const { store, calls, saved } = setup();
+    store.send('One', choice);
+    calls[0]!.end({ state: 'done', costMicroUsd: 1, cut: false });
+    await flush();
+    const one = store.get().chatId!;
+    store.clear();
+    store.send('Two', choice);
+    const two = store.get().chatId!;
+    store.remove(two);
+    expect(calls[1]!.signal.aborted).toBe(true);
+    expect(store.get()).toMatchObject({ chatId: null, messages: [], history: [{ chatId: one }] });
+    await flush();
+    expect([...saved.keys()].sort()).toEqual([`direct.chat.${one}`, 'direct.history']);
+    store.forget();
+    await flush();
+    expect(store.get().history).toEqual([]);
+    expect(saved.size).toBe(0);
+  });
+
+  it('keeps at most the newest chats', async () => {
+    const { store, saved } = setup();
+    for (let i = 0; i < historyMax + 2; i += 1) {
+      store.send(`Chat ${i}`, choice);
+      store.clear();
+    }
+    await flush();
+    expect(store.get().history).toHaveLength(historyMax);
+    expect(store.get().history[0]!.title).toBe(`Chat ${historyMax + 1}`);
+    expect(saved.size).toBe(historyMax + 1);
+  });
+
   it('clear stops the call and drops a late answer', async () => {
     const { store, calls } = setup();
     store.send('Hello', choice);
@@ -196,6 +268,6 @@ describe('the store', () => {
     calls[0]!.delta('late');
     calls[0]!.end({ state: 'done', costMicroUsd: 1, cut: false });
     await flush();
-    expect(store.get()).toEqual({ chatId: null, messages: [], busy: false });
+    expect(store.get()).toMatchObject({ chatId: null, messages: [], busy: false });
   });
 });

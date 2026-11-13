@@ -210,6 +210,12 @@ Do these steps on your own machine.
 1. Update `main`: `git switch main && git pull --rebase origin main && npm ci`.
    `npm run aab` writes the fingerprint from `node_modules`, so it must
    match the lock file.
+   A native release is the time to take the new patch versions of the
+   Expo packages: run `npx expo install --check` (online), and merge
+   `npx expo install --fix` in a pull request before the bump. CI checks
+   the packages against the list in the installed `expo` version
+   (`EXPO_OFFLINE=1`), because a patch update changes the native
+   fingerprint and then no EAS Update is possible.
 2. Pick the bump from the conventional commit types since the last
    release: `major` for a breaking change, `minor` for a `feat`, `patch`
    for the other types. Then:

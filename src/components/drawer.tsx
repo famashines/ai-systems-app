@@ -1,10 +1,11 @@
 import { router, type Href } from 'expo-router';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Animated, I18nManager, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText, Icon, IconButton, Mark, type IconName } from '@/components/ui';
 import type { Key } from '@/i18n';
+import { direct } from '@/lib/direct';
 import { useLive } from '@/state/live';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
@@ -25,6 +26,7 @@ export function Menu({ current }: { current: Section }) {
   const { t, colors } = useSettings();
   const { tasks, online, snapshot } = useLive();
   const { locked } = useSession();
+  const chat = useSyncExternalStore(direct.subscribe, direct.get);
   const [open, setOpen] = useState(false);
   if (open && locked) setOpen(false);
   const [progress] = useState(() => new Animated.Value(0));
@@ -87,6 +89,45 @@ export function Menu({ current }: { current: Section }) {
               })}
               <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
               <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
+                {t('drawer.chats')}
+              </AppText>
+              {chat.history.length === 0 ? (
+                <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.heading}>
+                  {t('drawer.noChats')}
+                </AppText>
+              ) : (
+                chat.history.map((item) => {
+                  const selected = item.chatId === chat.chatId;
+                  return (
+                    <View key={item.chatId} style={[styles.chat, { backgroundColor: selected ? colors.primaryContainer : 'transparent' }]}>
+                      <Pressable
+                        testID={`drawer-chat-${item.chatId}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('drawer.chat', { title: item.title })}
+                        accessibilityState={{ selected }}
+                        onPress={() => {
+                          void direct.open(item.chatId);
+                          go('/');
+                        }}
+                        android_ripple={{ color: colors.outlineVariant }}
+                        style={styles.chatTitle}
+                      >
+                        <AppText numberOfLines={1} color={selected ? 'onPrimaryContainer' : 'onSurface'}>
+                          {item.title}
+                        </AppText>
+                      </Pressable>
+                      <IconButton
+                        testID={`drawer-chat-delete-${item.chatId}`}
+                        icon={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                        label={t('drawer.chatDelete', { title: item.title })}
+                        onPress={() => direct.remove(item.chatId)}
+                      />
+                    </View>
+                  );
+                })
+              )}
+              <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
+              <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
                 {t('drawer.recent')}
               </AppText>
               {tasks.length === 0 ? (
@@ -134,5 +175,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget, paddingHorizontal: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: spacing.sm, marginHorizontal: spacing.md },
   heading: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  chat: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
+  chatTitle: { flex: 1, justifyContent: 'center', minHeight: touchTarget, paddingHorizontal: spacing.md },
   task: { justifyContent: 'center', minHeight: touchTarget + spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.md, overflow: 'hidden' },
 });

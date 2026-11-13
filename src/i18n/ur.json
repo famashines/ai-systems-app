@@ -255,5 +255,9 @@
   "chat.errorTooLong": "یہ چیٹ بہت لمبی ہے۔ نئی چیٹ شروع کریں۔",
   "chat.errorRateLimited": "بہت زیادہ پیغامات۔ انتظار کریں، پھر دوبارہ کوشش کریں۔",
   "chat.errorUnauthorized": "آپ کا سیشن ختم ہو گیا ہے۔ دوبارہ سائن ان کریں۔",
-  "chat.errorFailed": "ماڈل نے کوئی جواب نہیں دیا۔ دوبارہ کوشش کریں۔"
+  "chat.errorFailed": "ماڈل نے کوئی جواب نہیں دیا۔ دوبارہ کوشش کریں۔",
+  "drawer.chats": "چیٹس",
+  "drawer.noChats": "ابھی کوئی چیٹ نہیں۔",
+  "drawer.chat": "چیٹ: {title}",
+  "drawer.chatDelete": "چیٹ {title} حذف کریں"
 }

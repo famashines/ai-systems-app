@@ -291,9 +291,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     const reloadState = reloads.current;
     const budgetState = budgetRuns.current;
     if (session.status !== 'signedIn') {
-      if (session.status === 'signedOut') void removeItem(tasksCacheKey).catch(() => {});
+      if (session.status === 'signedOut') {
+        void removeItem(tasksCacheKey).catch(() => {});
+        direct.forget();
+      }
       return;
     }
+    void direct.load();
     let live: LiveClient | null = null;
     const id = Crypto.randomUUID();
     void getItem<unknown>(tasksCacheKey).catch(() => null).then((cached) => {

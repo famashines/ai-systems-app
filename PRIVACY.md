@@ -16,12 +16,14 @@ goes.
 | Access token of your login | App memory only | When the app stops, or at sign-out |
 | Settings: language and theme | Local SQLite database `cache.db` | When you remove the app or clear its data |
 | Recent task list: task id, title, status and times, at most 200 tasks | Local SQLite database `cache.db` | At sign-out |
+| Direct chats: your messages and the answers of the model, at most 50 chats | Local SQLite database `cache.db` | When you delete the chat in the menu, when it is older than the newest 50 chats, at sign-out, or when you remove the app or clear its data |
 | Update client id: a random id that the app makes for this install | Android app storage (`dev.expo.EASSharedPreferences`) | When you remove the app or clear its data |
 | App updates: the app code and images of the last update | Android app storage | When a newer update comes, when you remove the app, or when you clear its data |
 
-The chat thread, the conversation id and the budget are not kept on the
+The task thread, the conversation id and the budget are not kept on the
 device. The app gets them from the server each time. Each start of the app
-opens a new conversation.
+opens a new conversation. Direct chats are kept on the device only (table
+above); the server does not store them.
 
 The app lock uses the Android biometric prompt or your device PIN. Android
 does the check. The app gets only "unlocked" or "not unlocked". It does not

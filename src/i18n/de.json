@@ -255,5 +255,9 @@
   "chat.errorTooLong": "Dieser Chat ist zu lang. Starte einen neuen Chat.",
   "chat.errorRateLimited": "Zu viele Nachrichten. Warte und versuche es dann noch einmal.",
   "chat.errorUnauthorized": "Deine Sitzung ist beendet. Melde dich wieder an.",
-  "chat.errorFailed": "Das Modell hat keine Antwort gegeben. Versuche es noch einmal."
+  "chat.errorFailed": "Das Modell hat keine Antwort gegeben. Versuche es noch einmal.",
+  "drawer.chats": "Chats",
+  "drawer.noChats": "Noch keine Chats.",
+  "drawer.chat": "Chat: {title}",
+  "drawer.chatDelete": "Chat {title} löschen"
 }

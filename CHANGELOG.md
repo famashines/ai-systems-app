@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added (chat history)
+
+- Direct chats are kept on the phone, at most the newest 50. The side menu
+  lists them under "Chats". Select a chat to open it and continue it. The
+  bin button deletes one chat. Sign-out deletes all chats.
+- An answer that still comes when the app stops is not kept; the message
+  before it is.
+
+### Changed (CI)
+
+- The CI steps "Verify Expo dependencies" and "Verify Expo project" use the
+  package list in the installed `expo` version (`EXPO_OFFLINE=1`). The
+  online list changes with each Expo patch release and made `main` red
+  with no change in the repo. docs/release.md says when to take the new
+  patch versions.
+
 ### Added (direct chat)
 
 - With New task off, a message goes directly to the model (`POST
