@@ -179,7 +179,6 @@ function Posted({ message, onReply }: { message: ChatMessage; onReply: Reply }) 
   return (
     <View testID={`reply-${message.messageId}`} style={styles.agent}>
       <View
-        accessible
         accessibilityLiveRegion="polite"
         accessibilityLabel={cost === null ? t('chat.reply', { text: message.text }) : t('chat.replyCost', { text: message.text, cost })}
         style={styles.body}
