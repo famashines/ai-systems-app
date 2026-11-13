@@ -233,11 +233,10 @@ app                                api-gateway / socket-gateway
   text; TalkBack reads "New task" and its state. Send is a round filled
   button with an arrow.
 - New task: the task switch at the start of the row. When it is on, the
-  next message has `newTask: true`, and the switch goes off after the
-  send. When it is off, the message has `newTask: false`, and
-  conversation-hub decides: a task that waits for answers gets the
-  message (answer), else a running task (steer), else it starts a new
-  task.
+  next message has `newTask: true` and goes to the agent team, and the
+  switch goes off after the send. When it is off, the message is a direct
+  chat message (Direct chat, below). To answer or steer a task, use
+  "Reply to this task".
 - Reply to a task: an agent reply has "Reply to this task" only while
   its task is `clarifying`, `running` or `paused` (the status of the task
   list first, because a stored detail can be old after its topic is
@@ -299,6 +298,46 @@ connected, the Tasks screen shows "Offline, last update hh:mm" and the
 chat input, the New task switch, the model chip and Send are off, and the Budget form
 cannot save. Sign-out (also from the lock screen, or when
 the session ends) removes `live.tasks` and keeps the settings.
+
+## Direct chat
+
+```
+app                                           api-gateway --> ai-proxy --> OpenRouter
+ | POST /api/chat { chatId, model, effort?, messages }   (expo/fetch, a stream)
+ | <-- data: {"type":"delta","text":...} ...             text as it comes
+ | <-- data: {"type":"done","finishReason","costMicroUsd"}  or  {"type":"error","errorClass"}
+ | close the request                                      Stop
+```
+
+- Docs ADR 0034. The model gets only the messages of the chat: no system
+  prompt, no task, no agent. `src/lib/direct.ts` has the stream client and
+  the chat store; the chat is in memory only. New chat, sign-out and a
+  restart of the app clear it.
+- The app sends the full chat with each message, and the chosen model and
+  effort. A failed answer and an empty answer are not sent again; a
+  stopped answer with text is.
+- While an answer comes, Send is a Stop button. Stop closes the request
+  and keeps the text that came ("Stopped").
+- The last answer has "Make the answer again": the app drops that answer
+  and asks again. It also shows after an error.
+- Errors show under the answer: the budget refused, the connection failed
+  (also 45 s with no data; the server sends a ping each 15 s), too many
+  messages (429), session ended (401 after one token renewal), chat too
+  long (413), no answer from the model.
+- An answer that reached the length limit says so.
+- `src/components/markdown.tsx` draws markdown with the `marked` lexer as
+  native text: headings, bold, italic, strike-through, inline code, code
+  blocks (scroll sideways, copy button), lists, task lists, quotes, tables
+  (scroll sideways), rules, links. HTML shows as text. A link opens only
+  with `http` or `https`. An open code block in a text that still comes
+  shows as code.
+- Copy: each of your messages, each answer and each task reply has a copy
+  button. It shows a check mark for 2 s and TalkBack says "Copied". It
+  uses `Clipboard` of React Native core (deprecated; it logs one warning);
+  change to `expo-clipboard` with the next native release.
+- When you scroll up more than 240 dp, a round button goes to the latest
+  message.
+- Direct messages and task messages are in one list, in time order.
 
 ## Model and effort
 
@@ -505,6 +544,10 @@ audience `ai-systems-app` and the role `owner`.
 
 ## Known limits
 
+- A direct chat has no history: it is in memory only. A long chat can pass
+  the 256 KiB body limit of the gateway; the app then asks for a new chat.
+- A stopped direct answer can book the full reserved amount in the budget
+  (ai-proxy README, Known limits).
 - The Android recents screen can show a thumbnail of the last screen. The
   app does not set `FLAG_SECURE`. Reconsider in M9 hardening.
 - The thread and the budget are not in the offline cache. After a cold

@@ -8,6 +8,7 @@ import * as api from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
 import { config } from '@/lib/config';
+import { direct } from '@/lib/direct';
 import { callText, chatReducer, chatTopics, emptyChat, sortMessages, visibleStreams, type ChatMessage } from '@/lib/chat';
 import { LiveClient, type AuthLost, type LiveStatus, type Notice } from '@/lib/live';
 import { detailFromNotice, mergeDetail, type Details } from '@/lib/task';
@@ -350,6 +351,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       budgetState.again = false;
       dispatch({ type: 'clear' });
       dispatchChat({ type: 'clear' });
+      direct.clear();
       setMessages([]);
       setConversationId(null);
       setStatus('connecting');
@@ -512,6 +514,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       conversation.current = fresh;
       setConversationId(fresh);
       dispatchChat({ type: 'clear' });
+      direct.clear();
       dispatchChat({ type: 'page', items: [], first: true });
       setMessages([]);
       setThreadLoad('idle');

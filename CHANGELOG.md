@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Added (direct chat)
+
+- With New task off, a message goes directly to the model (`POST
+  /api/chat`, docs ADR 0034): no system prompt, no task, no agent. The
+  answer shows as it comes. The app sends the full chat with each message,
+  and the chosen model and effort.
+- Markdown in answers: headings, bold, italic, strike-through, inline code,
+  code blocks with a copy button, lists, task lists, quotes, tables, rules
+  and links. A link opens only with `http` or `https`. HTML shows as text.
+  The replies and the live text of a task use the same view.
+- Copy buttons on your messages, on answers and on task replies.
+- The send button is a stop button while an answer comes. Stop keeps the
+  text that came.
+- "Make the answer again" on the last answer, also after an error.
+- An answer shows its cost. An error shows its reason: budget, connection,
+  too many messages, session ended, chat too long.
+- A button to go to the latest message shows when you scroll up.
+- New dependency `marked` 18.2.0 (JS only). Copy uses `Clipboard` of React
+  Native core until the next native release.
+
+### Changed (direct chat)
+
+- New task on, or Reply on a task message, sends a message to the agent
+  team as before. New task off no longer steers a running task.
+- A direct chat is in memory only. New chat, sign-out and a restart of the
+  app clear it.
+
 ### Added (Play phone screenshots)
 
 - Four Google Play phone screenshots (1080 x 1920) in

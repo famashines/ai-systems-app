@@ -52,6 +52,8 @@ export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
 
 export const readingWidth = 720;
 
+export const tableCell = 144;
+
 export const drawerWidth = 304;
 
 export const motion = { open: 240 } as const;
@@ -62,6 +64,7 @@ export const type = {
   label: { fontSize: 14, lineHeight: 20, fontWeight: '500', letterSpacing: 0.1 },
   body: { fontSize: 16, lineHeight: 26, fontWeight: '400' },
   bodySmall: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
+  code: { fontSize: 14, lineHeight: 21, fontWeight: '400', fontFamily: 'monospace' },
 } as const satisfies Record<string, TextStyle>;
 
 function luminance(hex: string): number {

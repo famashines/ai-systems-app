@@ -55,6 +55,7 @@ env:
 - tapOn:
     id: "chat-input"
 - inputText: ${output.online}
+- tapOn: "New task"
 - tapOn: "Send"
 - extendedWaitUntil:
     visible: "Received"
