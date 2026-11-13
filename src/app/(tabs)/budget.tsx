@@ -3,7 +3,7 @@ import * as Crypto from 'expo-crypto';
 import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
-import { Menu } from '@/components/drawer';
+import { Back } from '@/components/drawer';
 import { AppText, Button, Card, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
 import * as api from '@/lib/api';
@@ -134,7 +134,7 @@ export default function Budget() {
   const { t } = useSettings();
   const { budget, reloadBudget } = useData();
   return (
-    <Screen title={t('tabs.budget')} start={<Menu current="/budget" />}>
+    <Screen title={t('tabs.budget')} start={<Back />}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {budget.loaded ? (
           budget.doc ? (
@@ -156,8 +156,8 @@ export default function Budget() {
 const styles = StyleSheet.create({
   content: { gap: spacing.lg, paddingBottom: spacing.xl },
   line: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  warning: { padding: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
+  warning: { padding: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
   form: { gap: spacing.md },
   field: { gap: spacing.xs },
-  input: { minHeight: touchTarget, borderWidth: 1, borderRadius: radius.md, borderCurve: 'continuous', paddingHorizontal: spacing.md, textAlign: 'auto' },
+  input: { minHeight: touchTarget, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, textAlign: 'auto' },
 });

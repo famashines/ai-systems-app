@@ -29,13 +29,15 @@ type IconButtonProps = {
   onPress: () => void;
   disabled?: boolean;
   filled?: boolean;
+  compact?: boolean;
   color?: keyof Colors;
   testID?: string;
   accessibilityHint?: string;
 };
 
-export function IconButton({ icon, label, onPress, disabled = false, filled = false, color = 'onSurface', testID, accessibilityHint }: IconButtonProps) {
+export function IconButton({ icon, label, onPress, disabled = false, filled = false, compact = false, color = 'onSurface', testID, accessibilityHint }: IconButtonProps) {
   const { colors } = useSettings();
+  const muted = filled && disabled;
   return (
     <Pressable
       testID={testID}
@@ -45,10 +47,15 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
+      hitSlop={compact ? (touchTarget - compactButton) / 2 : undefined}
       android_ripple={{ color: colors.outlineVariant, borderless: !filled }}
-      style={({ pressed }) => [styles.iconButton, { backgroundColor: filled ? colors.primary : 'transparent', opacity: disabled ? 0.38 : pressed ? 0.7 : 1 }]}
+      style={({ pressed }) => [
+        styles.iconButton,
+        compact && styles.compact,
+        { backgroundColor: muted ? colors.surfaceContainerHigh : filled ? colors.primary : 'transparent', opacity: muted ? 1 : disabled ? 0.38 : pressed ? 0.7 : 1 },
+      ]}
     >
-      <Icon name={icon} color={filled ? 'onPrimary' : color} size={filled ? 22 : 24} />
+      <Icon name={icon} color={muted ? 'onSurfaceVariant' : filled ? 'onPrimary' : color} size={compact ? 18 : filled ? 22 : 24} />
     </Pressable>
   );
 }
@@ -139,6 +146,8 @@ export function StateView(props: StateProps) {
   );
 }
 
+const compactButton = 36;
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
@@ -146,17 +155,17 @@ const styles = StyleSheet.create({
   title: { flex: 1, textAlign: 'center' },
   body: { flex: 1, width: '100%', maxWidth: readingWidth, alignSelf: 'center', paddingHorizontal: spacing.md, gap: spacing.md },
   iconButton: { width: touchTarget, height: touchTarget, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  compact: { width: compactButton, height: compactButton, margin: (touchTarget - compactButton) / 2 },
   button: {
     minHeight: touchTarget,
     minWidth: touchTarget,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  card: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2 },
+  card: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth * 2 },
   state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.lg },
   center: { textAlign: 'center' },
 });

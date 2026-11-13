@@ -1,6 +1,7 @@
 {
   "app.name": "Fama AI",
   "common.retry": "دوبارہ کوشش کریں",
+  "common.back": "واپس",
   "common.error": "کچھ غلط ہو گیا۔",
   "login.title": "سائن ان",
   "login.body": "اپنے famashines اکاؤنٹ سے سائن ان کریں۔",

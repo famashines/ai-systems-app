@@ -1,6 +1,7 @@
 {
   "app.name": "Fama AI",
   "common.retry": "Erneut versuchen",
+  "common.back": "Zurück",
   "common.error": "Etwas ist schiefgelaufen.",
   "login.title": "Anmelden",
   "login.body": "Melden Sie sich mit Ihrem famashines-Konto an.",

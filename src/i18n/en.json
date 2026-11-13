@@ -1,6 +1,7 @@
 {
   "app.name": "Fama AI",
   "common.retry": "Try again",
+  "common.back": "Back",
   "common.error": "Something went wrong.",
   "login.title": "Sign in",
   "login.body": "Sign in with your famashines account.",

@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Menu } from '@/components/drawer';
+import { Back } from '@/components/drawer';
 import { AppText, Button, Card, Screen, StateView } from '@/components/ui';
 import { languages, type Key } from '@/i18n';
 import { config } from '@/lib/config';
@@ -68,7 +68,7 @@ export default function Settings() {
   ];
 
   return (
-    <Screen title={t('tabs.settings')} start={<Menu current="/settings" />}>
+    <Screen title={t('tabs.settings')} start={<Back />}>
       <ScrollView contentContainerStyle={styles.content}>
         <Choices label={t('settings.language')} options={languageOptions} value={settings.language} onChange={(language) => void update({ language })} />
         <Choices label={t('settings.theme')} options={themeOptions} value={settings.theme} onChange={(theme) => void update({ theme })} />
@@ -97,6 +97,6 @@ const styles = StyleSheet.create({
   version: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs },
   option: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  warning: { padding: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
+  warning: { padding: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
   dot: { width: 10, height: 10, borderRadius: radius.full },
 });

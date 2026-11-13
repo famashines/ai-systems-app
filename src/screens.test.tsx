@@ -5,7 +5,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useLocales } from 'expo-localization';
 import { fetch as streamFetch } from 'expo/fetch';
 import type { ReactElement } from 'react';
-import { Clipboard, I18nManager, Text } from 'react-native';
+import { Clipboard, I18nManager, Keyboard, Text } from 'react-native';
 
 import Budget from '@/app/(tabs)/budget';
 import Chat from '@/app/(tabs)/index';
@@ -362,11 +362,15 @@ describe('App', () => {
       await ready();
       expect(screen.getAllByRole('header')).toHaveLength(1);
       expect(screen.getByRole('header', { name: 'New chat' })).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
       expect(screen.queryByTestId('fama-mark')).toBeNull();
       expect(screen.getByText('Choose a model to send a message.')).toBeOnTheScreen();
+      const dismiss = jest.spyOn(Keyboard, 'dismiss');
+      await fireEvent.press(screen.getByTestId('chat-empty'));
+      expect(dismiss).toHaveBeenCalled();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Help me plan my week');
       expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Send' })).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
+      expect(screen.getByRole('button', { name: 'Send' })).toHaveStyle({ width: 36, height: 36, borderRadius: 999 });
     });
 
     it('chooses a model and an effort in the picker, searches, and keeps the choice', async () => {
@@ -380,6 +384,8 @@ describe('App', () => {
       await fireEvent.press(screen.getByRole('radio', { name: 'Low' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
       expect(screen.queryByTestId('model-panel')).toBeNull();
+      expect(screen.queryByTestId('model-chip')).toBeNull();
+      await fireEvent(screen.getByLabelText('Message'), 'focus');
       expect(screen.getByTestId('model-chip')).toHaveProp('accessibilityLabel', 'Model Anthropic: Claude Opus 5.5, effort Low');
       expect(screen.getByText(shortName('Anthropic: Claude Opus 5.5'))).toBeOnTheScreen();
       expect((await getItem<{ model: string; effort: string }>('settings'))?.value).toMatchObject({ model: 'anthropic/claude-opus-5.5', effort: 'low' });
@@ -453,16 +459,16 @@ describe('App', () => {
   });
 
   describe('Menu', () => {
-    it('opens with New chat, the chat list and the sections, and closes from the scrim, the close button and the back button', async () => {
-      await show(<Budget />);
+    it('opens with the chat list and the sections, and closes from the scrim, the close button and the back button', async () => {
+      await show(<Chat />);
       await ready();
       expect(screen.queryByTestId('drawer-panel')).toBeNull();
       const menu = screen.getByRole('button', { name: 'Open the menu' });
       expect(menu).toHaveStyle({ width: 48, height: 48 });
       await fireEvent.press(menu);
-      expect(screen.getByRole('button', { name: 'Budget', selected: true })).toBeOnTheScreen();
-      expect(screen.getByRole('button', { name: 'Settings', selected: false })).toBeOnTheScreen();
-      expect(screen.getByRole('button', { name: 'New chat' })).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Budget' })).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Settings' })).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
       expect(screen.getByText('No chats yet.')).toBeOnTheScreen();
       await fireEvent.press(screen.getByTestId('drawer-scrim', { includeHiddenElements: true }));
       expect(screen.queryByTestId('drawer-panel')).toBeNull();
@@ -475,15 +481,17 @@ describe('App', () => {
       expect(router.navigate).not.toHaveBeenCalled();
     });
 
-    it('goes to a section, and New chat goes to the chat', async () => {
-      await show(<Budget />);
+    it('goes to a section, and its back button goes to the chat', async () => {
+      await show(<Chat />);
       await ready();
       await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Settings' }));
       expect(router.navigate).toHaveBeenLastCalledWith('/settings');
       expect(screen.queryByTestId('drawer-panel')).toBeNull();
-      await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
-      await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
+      await screen.unmount();
+      await show(<Budget />);
+      expect(screen.queryByRole('button', { name: 'Open the menu' })).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
       expect(router.navigate).toHaveBeenLastCalledWith('/');
     });
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentRef } from 'react';
-import { AccessibilityInfo, Animated, FlatList, StyleSheet, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Animated, FlatList, Keyboard, LayoutAnimation, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Menu } from '@/components/drawer';
 import { CopyButton, Markdown } from '@/components/markdown';
@@ -118,7 +118,7 @@ function Thread({ messages }: { messages: DirectMessage[] }) {
   const { t } = useSettings();
   const list = useRef<FlatList<DirectMessage>>(null);
   const [away, setAway] = useState(false);
-  if (messages.length === 0) return <View style={styles.fill} />;
+  if (messages.length === 0) return <Pressable testID="chat-empty" accessible={false} importantForAccessibility="no" onPress={() => Keyboard.dismiss()} style={styles.fill} />;
   const newestFirst = [...messages].reverse();
   return (
     <View style={styles.fill}>
@@ -132,6 +132,7 @@ function Thread({ messages }: { messages: DirectMessage[] }) {
         renderItem={({ item, index }) => <Message message={item} last={index === 0} />}
         onScroll={(event) => setAway(event.nativeEvent.contentOffset.y > awayOffset)}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={styles.list}
       />
       {away ? (
@@ -153,12 +154,29 @@ export default function Chat() {
   const { t, colors } = useSettings();
   const chat = useSyncExternalStore(direct.subscribe, direct.get);
   const [text, setText] = useState('');
+  const [focused, setFocused] = useState(false);
+  const [still, setStill] = useState(false);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const choice = useChoice();
   const needsModel = choice.model === undefined;
+  const chipShown = focused || needsModel;
   const canSend = text.trim() !== '' && !needsModel && !chat.busy;
   const title = chat.history.find((item) => item.chatId === chat.chatId)?.title ?? t('chat.newChat');
 
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setStill);
+    const motionSub = AccessibilityInfo.addEventListener('reduceMotionChanged', setStill);
+    const keyboardSub = Keyboard.addListener('keyboardDidHide', () => input.current?.blur());
+    return () => {
+      motionSub.remove();
+      keyboardSub.remove();
+    };
+  }, []);
+
+  const focus = (on: boolean) => {
+    if (!still && !needsModel) LayoutAnimation.configureNext(LayoutAnimation.create(motion.fade, 'easeInEaseOut', 'opacity'));
+    setFocused(on);
+  };
   const submit = () => {
     if (!canSend) return;
     direct.send(text, choice);
@@ -173,8 +191,8 @@ export default function Chat() {
   return (
     <Screen
       title={title}
-      start={<Menu current="/" />}
-      end={<IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} onPress={startNew} />}
+      start={<Menu />}
+      end={chat.messages.length > 0 ? <IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} onPress={startNew} /> : null}
     >
       <Thread messages={chat.messages} />
       <View style={styles.composer}>
@@ -183,28 +201,29 @@ export default function Chat() {
             {t('chat.modelNeeded')}
           </AppText>
         ) : null}
-        <View testID="composer" style={[styles.bar, { backgroundColor: colors.surfaceContainer, borderColor: colors.outlineVariant }]}>
-          <TextInput
-            ref={input}
-            testID="chat-input"
-            value={text}
-            onChangeText={setText}
-            multiline
-            maxLength={messageTextMax}
-            accessibilityLabel={t('chat.inputLabel')}
-            placeholder={t('chat.placeholder')}
-            placeholderTextColor={colors.onSurfaceVariant}
-            style={[styles.input, type.body, { color: colors.onSurface }]}
-          />
-          <View style={styles.tools}>
-            <ModelPicker disabled={false} />
-            <View style={styles.fill} />
-            {chat.busy ? (
-              <IconButton testID="stop" icon={{ ios: 'stop.fill', android: 'stop', web: 'stop' }} label={t('chat.stop')} filled onPress={direct.stop} />
-            ) : (
-              <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled disabled={!canSend} onPress={submit} />
-            )}
+        <View testID="composer" style={[styles.bar, { backgroundColor: colors.surfaceContainer }]}>
+          <View style={styles.fill}>
+            <TextInput
+              ref={input}
+              testID="chat-input"
+              value={text}
+              onChangeText={setText}
+              onFocus={() => focus(true)}
+              onBlur={() => focus(false)}
+              multiline
+              maxLength={messageTextMax}
+              accessibilityLabel={t('chat.inputLabel')}
+              placeholder={t('chat.placeholder')}
+              placeholderTextColor={colors.onSurfaceVariant}
+              style={[styles.input, type.body, { color: colors.onSurface }]}
+            />
+            <ModelPicker disabled={false} hidden={!chipShown} />
           </View>
+          {chat.busy ? (
+            <IconButton testID="stop" icon={{ ios: 'stop.fill', android: 'stop', web: 'stop' }} label={t('chat.stop')} filled compact onPress={direct.stop} />
+          ) : (
+            <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled compact disabled={!canSend} onPress={submit} />
+          )}
         </View>
       </View>
     </Screen>
@@ -215,7 +234,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { gap: spacing.lg, paddingVertical: spacing.md },
   mine: { alignItems: 'flex-end' },
-  bubble: { maxWidth: '85%', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.md, borderCurve: 'continuous' },
+  bubble: { maxWidth: '85%', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.md },
   answer: { gap: spacing.sm, alignSelf: 'stretch' },
   actions: { flexDirection: 'row', alignItems: 'center', marginStart: -spacing.sm - spacing.xs },
   cost: { marginStart: spacing.sm },
@@ -223,7 +242,6 @@ const styles = StyleSheet.create({
   dot: { width: mark.thinking, height: mark.thinking, borderRadius: radius.full },
   latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },
   composer: { gap: spacing.sm, paddingBottom: spacing.sm },
-  bar: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.field, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },
-  tools: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  bar: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.xs, padding: spacing.sm, borderRadius: radius.field, boxShadow: shadow.composer },
   input: { minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.sm, paddingVertical: (touchTarget - type.body.lineHeight) / 2, textAlign: 'auto', textAlignVertical: 'top' },
 });
