@@ -237,7 +237,7 @@ function Thread({ onReply }: { onReply: Reply }) {
     return <StateView kind="empty" mark title={t('chat.empty')} />;
   }
   return (
-    <>
+    <View style={styles.thread}>
       {threadLoad === 'error' ? <StateView kind="error" title={t('chat.error')} retryLabel={t('common.retry')} onRetry={reloadThread} /> : null}
       <FlatList
         ref={list}
@@ -278,7 +278,7 @@ function Thread({ onReply }: { onReply: Reply }) {
           />
         </View>
       ) : null}
-    </>
+    </View>
   );
 }
 
@@ -396,6 +396,7 @@ const styles = StyleSheet.create({
   owner: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.lg, borderCurve: 'continuous', maxWidth: '85%', alignSelf: 'flex-end' },
   agent: { gap: spacing.sm, alignSelf: 'stretch' },
   mine: { alignItems: 'flex-end' },
+  thread: { flex: 1, gap: spacing.md },
   latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },
   body: { gap: spacing.xs },
   shrink: { flexShrink: 1 },
