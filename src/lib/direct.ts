@@ -165,6 +165,8 @@ export function createDirectStore(
   const tried = new Set<string>();
   let pending: Pending[] = [];
   let flushing: Promise<boolean> | null = null;
+  let generation = 0;
+  let opening = 0;
 
   const emit = () => {
     if (timer) clearTimeout(timer);
@@ -205,7 +207,7 @@ export function createDirectStore(
       } catch (error) {
         if (!(error instanceof ApiError && error.kind === 'rejected')) return false;
       }
-      pending = pending.slice(1);
+      pending = pending.filter((item) => item !== op);
       await storage.setItem(pendingKey, pending).catch(() => {});
     }
     return true;
@@ -219,6 +221,7 @@ export function createDirectStore(
   }
 
   function enqueue(op: Pending) {
+    generation += 1;
     pending = [...pending, op];
     void storage
       .setItem(pendingKey, pending)
@@ -351,24 +354,29 @@ export function createDirectStore(
       abort?.abort();
     },
     clear() {
+      opening += 1;
       abort?.abort();
       abort = null;
       set({ ...state, chatId: null, messages: [], busy: false });
     },
     async load() {
+      const asked = generation;
       const [stored, queued] = await Promise.all([storage.getItem<ChatSummary[]>(historyKey).catch(() => null), storage.getItem<Pending[]>(pendingKey).catch(() => null)]);
+      if (asked !== generation) return;
       set({ ...state, history: stored?.value ?? [] });
       if (pending.length === 0) pending = queued?.value ?? [];
       if (!(await flush())) return;
       const items = await server.list().catch(() => null);
-      if (items && pending.length === 0) merge(items);
+      if (items && pending.length === 0 && asked === generation) merge(items);
     },
     async open(chatId: string) {
+      const ticket = (opening += 1);
       const stored = await storage.getItem<DirectMessage[]>(chatKey(chatId)).catch(() => null);
+      if (ticket !== opening) return;
       if (!stored) {
         if (!state.history.some((item) => item.chatId === chatId)) return;
         const fetched = await fetchMessages(chatId);
-        if (!fetched) return;
+        if (!fetched || ticket !== opening) return;
         abort?.abort();
         abort = null;
         adopt(chatId, fetched);
@@ -380,7 +388,7 @@ export function createDirectStore(
       set({ ...state, chatId, messages: local, busy: false });
       const shown = state.messages;
       const fetched = await fetchMessages(chatId);
-      if (fetched && state.chatId === chatId && state.messages === shown && fetched.length >= history(local).length) adopt(chatId, fetched);
+      if (fetched && ticket === opening && state.chatId === chatId && state.messages === shown && fetched.length >= history(local).length) adopt(chatId, fetched);
     },
     remove(chatId: string) {
       if (state.chatId === chatId) {
@@ -407,6 +415,8 @@ export function createDirectStore(
       const old = state.history;
       abort?.abort();
       abort = null;
+      generation += 1;
+      opening += 1;
       set({ chatId: null, messages: [], busy: false, history: [] });
       pending = pending.filter((op) => op.kind === 'delete');
       void Promise.all([storage.removeItem(historyKey), storage.setItem(pendingKey, pending), ...old.map((item) => storage.removeItem(chatKey(item.chatId)))]).catch(() => {});

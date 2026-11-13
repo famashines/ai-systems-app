@@ -139,6 +139,7 @@ describe('the store', () => {
     const server = {
       offline: false,
       refuse: false,
+      gate: null as Promise<void> | null,
       items: [] as ServerChat[],
       pages: new Map<string, ServerMessage[]>(),
       sent: [] as [string, string, ChatChange?][],
@@ -148,7 +149,8 @@ describe('the store', () => {
       list: () => online().then(() => server.items),
       messages: (chatId: string) => online().then(() => server.pages.get(chatId) ?? []),
       change: (chatId: string, change: ChatChange) =>
-        online().then(() => {
+        online().then(async () => {
+          await server.gate;
           if (server.refuse) throw new ApiError('rejected', 0, undefined, 400);
           server.sent.push(['change', chatId, change]);
         }),
@@ -503,6 +505,45 @@ describe('the store', () => {
     server.refuse = true;
     await store.load();
     expect(server.sent).toEqual([['remove', 'remote-2']]);
+  });
+
+  it('drops a list or a chat that comes after sign-out, a new open or a new change', async () => {
+    const { store, server, saved } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6)];
+    await store.load();
+    server.pages.set('remote-1', [{ seq: 0, role: 'user', text: 'One', createdAt: at(1) }]);
+    server.pages.set('remote-2', [{ seq: 0, role: 'user', text: 'Two', createdAt: at(1) }]);
+    const first = store.open('remote-1');
+    const second = store.open('remote-2');
+    await Promise.all([first, second]);
+    expect(store.get().chatId).toBe('remote-2');
+    const loading = store.load();
+    store.forget();
+    await loading;
+    await flush();
+    expect(store.get().history).toEqual([]);
+    expect(saved.has('direct.history')).toBe(false);
+  });
+
+  it('a queued item that is sent while sign-out filters the queue does not remove a delete', async () => {
+    const { store, server, make } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6)];
+    await store.load();
+    server.offline = true;
+    store.rename('remote-1', 'Name');
+    store.remove('remote-2');
+    await flush();
+    server.offline = false;
+    let release = () => {};
+    server.gate = new Promise<void>((resolve) => (release = resolve));
+    const draining = store.load();
+    await flush();
+    store.forget();
+    release();
+    await draining;
+    server.gate = null;
+    await make().load();
+    expect(server.sent.filter(([kind]) => kind === 'remove')).toEqual([['remove', 'remote-2']]);
   });
 
   it('sign-out keeps only the deletes that wait for the server', async () => {
