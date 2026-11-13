@@ -4,6 +4,7 @@ import { fetch as streamFetch } from 'expo/fetch';
 import { z } from 'zod';
 
 import * as auth from '@/lib/auth';
+import * as cache from '@/lib/cache';
 import { config } from '@/lib/config';
 
 export const idleTimeoutMs = 45_000;
@@ -22,7 +23,14 @@ export type DirectMessage = {
   cut?: boolean;
 };
 export type Choice = { model?: string; effort?: ReasoningEffort };
-export type DirectChat = { chatId: string | null; messages: DirectMessage[]; busy: boolean };
+export type ChatSummary = { chatId: string; title: string; updatedAt: number };
+export type DirectChat = { chatId: string | null; messages: DirectMessage[]; busy: boolean; history: ChatSummary[] };
+export type Storage = Pick<typeof cache, 'getItem' | 'setItem' | 'removeItem'>;
+
+export const historyKey = 'direct.history';
+export const historyMax = 50;
+export const titleMax = 80;
+const chatKey = (chatId: string) => `direct.chat.${chatId}`;
 
 const StreamEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('delta'), text: z.string() }),
@@ -117,8 +125,13 @@ export function history(messages: DirectMessage[]): Body['messages'] {
 
 type Listener = () => void;
 
-export function createDirectStore(run: typeof streamChat = streamChat, newId: () => string = () => Crypto.randomUUID(), now: () => number = Date.now) {
-  let state: DirectChat = { chatId: null, messages: [], busy: false };
+export function createDirectStore(
+  run: typeof streamChat = streamChat,
+  newId: () => string = () => Crypto.randomUUID(),
+  now: () => number = Date.now,
+  storage: Storage = cache,
+) {
+  let state: DirectChat = { chatId: null, messages: [], busy: false, history: [] };
   let abort: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<Listener>();
@@ -136,6 +149,20 @@ export function createDirectStore(run: typeof streamChat = streamChat, newId: ()
   const patch = (id: string, change: (message: DirectMessage) => DirectMessage, soon = false) => {
     set({ ...state, messages: state.messages.map((message) => (message.id === id ? change(message) : message)) }, soon);
   };
+
+  function save() {
+    const { chatId, messages } = state;
+    const first = messages.find((message) => message.role === 'user');
+    if (!chatId || !first) return;
+    const history = [{ chatId, title: first.text.slice(0, titleMax), updatedAt: now() }, ...state.history.filter((item) => item.chatId !== chatId)];
+    const dropped = history.slice(historyMax);
+    set({ ...state, history: history.slice(0, historyMax) });
+    void Promise.all([
+      storage.setItem(chatKey(chatId), messages),
+      storage.setItem(historyKey, state.history),
+      ...dropped.map((item) => storage.removeItem(chatKey(item.chatId))),
+    ]).catch(() => {});
+  }
 
   async function answer(choice: Choice) {
     if (!choice.model) return;
@@ -159,6 +186,7 @@ export function createDirectStore(run: typeof streamChat = streamChat, newId: ()
           ? { ...message, state: 'done', costMicroUsd: outcome.costMicroUsd, cut: outcome.cut }
           : { ...message, state: 'error', error: outcome.error, ...(outcome.costMicroUsd ? { costMicroUsd: outcome.costMicroUsd } : {}) },
     );
+    save();
   }
 
   return {
@@ -172,7 +200,8 @@ export function createDirectStore(run: typeof streamChat = streamChat, newId: ()
     send(text: string, choice: Choice) {
       const trimmed = text.trim();
       if (!trimmed || state.busy || !choice.model) return;
-      set({ ...state, messages: [...state.messages, { id: newId(), role: 'user', text: trimmed, createdAt: new Date(now()).toISOString(), state: 'done' }] });
+      set({ ...state, chatId: state.chatId ?? newId(), messages: [...state.messages, { id: newId(), role: 'user', text: trimmed, createdAt: new Date(now()).toISOString(), state: 'done' }] });
+      save();
       void answer(choice);
     },
     regenerate(choice: Choice) {
@@ -187,7 +216,35 @@ export function createDirectStore(run: typeof streamChat = streamChat, newId: ()
     clear() {
       abort?.abort();
       abort = null;
-      set({ chatId: null, messages: [], busy: false });
+      set({ ...state, chatId: null, messages: [], busy: false });
+    },
+    async load() {
+      const stored = await storage.getItem<ChatSummary[]>(historyKey).catch(() => null);
+      set({ ...state, history: stored?.value ?? [] });
+    },
+    async open(chatId: string) {
+      const stored = await storage.getItem<DirectMessage[]>(chatKey(chatId)).catch(() => null);
+      if (!stored) return;
+      abort?.abort();
+      abort = null;
+      const messages = stored.value.map((message) => (message.state === 'streaming' ? { ...message, state: 'stopped' as const } : message));
+      set({ ...state, chatId, messages, busy: false });
+    },
+    remove(chatId: string) {
+      if (state.chatId === chatId) {
+        abort?.abort();
+        abort = null;
+        state = { ...state, chatId: null, messages: [], busy: false };
+      }
+      set({ ...state, history: state.history.filter((item) => item.chatId !== chatId) });
+      void Promise.all([storage.removeItem(chatKey(chatId)), storage.setItem(historyKey, state.history)]).catch(() => {});
+    },
+    forget() {
+      const old = state.history;
+      abort?.abort();
+      abort = null;
+      set({ chatId: null, messages: [], busy: false, history: [] });
+      void Promise.all([storage.removeItem(historyKey), ...old.map((item) => storage.removeItem(chatKey(item.chatId)))]).catch(() => {});
     },
   };
 }

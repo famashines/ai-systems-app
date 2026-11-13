@@ -311,8 +311,14 @@ app                                           api-gateway --> ai-proxy --> OpenR
 
 - Docs ADR 0034. The model gets only the messages of the chat: no system
   prompt, no task, no agent. `src/lib/direct.ts` has the stream client and
-  the chat store; the chat is in memory only. New chat, sign-out and a
-  restart of the app clear it.
+  the chat store.
+- History: the store saves each chat in the sqlite cache (`direct.history`
+  for the list, `direct.chat.<chatId>` for the messages) when you send a
+  message and when an answer ends. It keeps the newest 50 chats. The side
+  menu lists them under "Chats": select one to open it, the bin button
+  deletes it. Sign-out deletes all. New chat and a restart of the app
+  start an empty chat; the old chats stay in the menu. The server stores
+  no direct chat.
 - The app sends the full chat with each message, and the chosen model and
   effort. A failed answer and an empty answer are not sent again; a
   stopped answer with text is.
@@ -544,8 +550,9 @@ audience `ai-systems-app` and the role `owner`.
 
 ## Known limits
 
-- A direct chat has no history: it is in memory only. A long chat can pass
-  the 256 KiB body limit of the gateway; the app then asks for a new chat.
+- The chat history is on this phone only. A second phone does not show it.
+  A long chat can pass the 256 KiB body limit of the gateway; the app then
+  asks for a new chat.
 - A stopped direct answer can book the full reserved amount in the budget
   (ai-proxy README, Known limits).
 - The Android recents screen can show a thumbnail of the last screen. The

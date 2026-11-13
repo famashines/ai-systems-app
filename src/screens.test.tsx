@@ -869,7 +869,7 @@ describe('Live', () => {
     const settle = () => act(async () => new Promise<void>((resolve) => setTimeout(resolve, notifyMs + 30)));
 
     beforeEach(async () => {
-      direct.clear();
+      direct.forget();
       chatFetch.mockReset().mockImplementation(async () => openStream());
       jest.mocked(auth.getAccessToken).mockResolvedValue('token-1');
       await setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-5', effort: null });
@@ -938,6 +938,45 @@ describe('Live', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
       expect(screen.queryByText('Long story')).toBeNull();
       expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
+    });
+
+    it('lists the chats in the menu, opens an old chat, deletes a chat, and forgets all at sign-out', async () => {
+      jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+      await show(
+        <>
+          <Chat />
+          <Settings />
+          <Login />
+        </>,
+      );
+      await connect();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'First question');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(chatFetch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        push({ type: 'delta', text: 'First answer' });
+        push(done);
+        end();
+      });
+      await settle();
+      await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
+      expect(screen.queryByText('First answer')).toBeNull();
+      await fireEvent.press(screen.getAllByTestId('menu')[0]!);
+      const row = await screen.findByRole('button', { name: 'Chat: First question' });
+      await fireEvent.press(row);
+      expect(await screen.findByText('First answer')).toBeOnTheScreen();
+      expect(await getItem('direct.history')).not.toBeNull();
+      await fireEvent.press(screen.getAllByTestId('menu')[0]!);
+      await fireEvent.press(await screen.findByRole('button', { name: 'Delete the chat First question' }));
+      expect(screen.queryByRole('button', { name: 'Chat: First question' })).toBeNull();
+      expect(screen.getAllByText('No chats yet.').length).toBeGreaterThan(0);
+      expect(screen.queryByText('First answer')).toBeNull();
+      await fireEvent.press(screen.getAllByTestId('drawer-scrim', { includeHiddenElements: true })[0]!);
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Second question');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(async () => expect((await getItem<unknown[]>('direct.history'))?.value).toHaveLength(1));
+      await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
+      await waitFor(async () => expect(await getItem('direct.history')).toBeNull());
     });
 
     it('shows the reason when the budget refuses the message', async () => {

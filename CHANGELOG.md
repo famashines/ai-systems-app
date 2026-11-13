@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added (chat history)
+
+- Direct chats are kept on the phone, at most the newest 50. The side menu
+  lists them under "Chats". Select a chat to open it and continue it. The
+  bin button deletes one chat. Sign-out deletes all chats.
+- An answer that still comes when the app stops is not kept; the message
+  before it is.
+
 ### Added (direct chat)
 
 - With New task off, a message goes directly to the model (`POST
