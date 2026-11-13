@@ -99,6 +99,7 @@ function Message({ message, last }: { message: DirectMessage; last: boolean }) {
               testID="regenerate"
               icon={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
               label={t('chat.regenerate')}
+              color="onSurfaceVariant"
               onPress={() => direct.regenerate(choice)}
             />
           ) : null}

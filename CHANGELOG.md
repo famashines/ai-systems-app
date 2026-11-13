@@ -24,6 +24,7 @@
   starter lines.
 - After a copy, the copy icon changes to a green check for 2 seconds. New
   colour token `success`.
+- The copy and regenerate icons use the quiet `onSurfaceVariant` colour.
 - The header shows the title of the chat (its first message).
 - One pulsing dot shows while the first text of an answer has not come.
 - The composer has the model chip at the start and Send at the end.

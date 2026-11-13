@@ -26,7 +26,7 @@ export function CopyButton({ text, label, testID }: { text: string; label: strin
       testID={testID}
       icon={copied ? { ios: 'checkmark', android: 'check', web: 'check' } : { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
       label={copied ? t('chat.copied') : label}
-      color={copied ? 'success' : 'onSurface'}
+      color={copied ? 'success' : 'onSurfaceVariant'}
       onPress={copy}
     />
   );
