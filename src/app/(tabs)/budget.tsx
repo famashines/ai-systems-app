@@ -4,12 +4,11 @@ import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Menu } from '@/components/drawer';
-import { LiveBar } from '@/components/live-bar';
 import { AppText, Button, Card, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
 import * as api from '@/lib/api';
 import { formatUsd, formatUsdExact, parseUsd, usdText } from '@/lib/money';
-import { useLive } from '@/state/live';
+import { useData } from '@/state/data';
 import { useSettings } from '@/state/settings';
 import { radius, spacing, touchTarget, type } from '@/theme';
 
@@ -55,7 +54,6 @@ function Month({ month }: { month: BudgetMonthV1 }) {
 
 function Field({ label, value, onChange, testID }: { label: string; value: string; onChange: (text: string) => void; testID: string }) {
   const { t, colors, language } = useSettings();
-  const { online } = useLive();
   const read = value.trim() ? parseUsd(value) : null;
   return (
     <View style={styles.field}>
@@ -66,10 +64,8 @@ function Field({ label, value, onChange, testID }: { label: string; value: strin
         testID={testID}
         value={value}
         onChangeText={onChange}
-        editable={online}
         keyboardType="decimal-pad"
         accessibilityLabel={label}
-        accessibilityState={{ disabled: !online }}
         style={[styles.input, type.body, { color: colors.onSurface, borderColor: colors.outline, backgroundColor: colors.surfaceContainer }]}
       />
       {typeof read === 'number' ? (
@@ -83,7 +79,7 @@ function Field({ label, value, onChange, testID }: { label: string; value: strin
 
 function CapForm({ month }: { month: BudgetMonthV1 | null }) {
   const { t } = useSettings();
-  const { online, reloadBudget } = useLive();
+  const { reloadBudget } = useData();
   const [hard, setHard] = useState(month?.capMicroUsd == null ? '' : usdText(month.capMicroUsd));
   const [soft, setSoft] = useState(month?.softCapMicroUsd === undefined ? '' : usdText(month.softCapMicroUsd));
   const [save, setSave] = useState<Save>('idle');
@@ -124,27 +120,21 @@ function CapForm({ month }: { month: BudgetMonthV1 | null }) {
       </AppText>
       <Field testID="budget-hard" label={t('budget.hardLabel')} value={hard} onChange={edit(setHard)} />
       <Field testID="budget-soft" label={t('budget.softLabel')} value={soft} onChange={edit(setSoft)} />
-      {online ? null : (
-        <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite">
-          {t('budget.offline')}
-        </AppText>
-      )}
       {message ? (
         <AppText color={bad ? 'error' : 'onSurface'} accessibilityLiveRegion="polite" accessibilityRole={bad ? 'alert' : undefined}>
           {message}
         </AppText>
       ) : null}
-      <Button label={t('budget.save')} busy={save === 'saving'} disabled={!online || !hard.trim()} onPress={() => void submit()} />
+      <Button label={t('budget.save')} busy={save === 'saving'} disabled={!hard.trim()} onPress={() => void submit()} />
     </View>
   );
 }
 
 export default function Budget() {
   const { t } = useSettings();
-  const { budget, reloadBudget, online, status, reconnect } = useLive();
+  const { budget, reloadBudget } = useData();
   return (
     <Screen title={t('tabs.budget')} start={<Menu current="/budget" />}>
-      <LiveBar />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {budget.loaded ? (
           budget.doc ? (
@@ -154,8 +144,6 @@ export default function Budget() {
           )
         ) : budget.load === 'error' ? (
           <StateView kind="error" title={t('budget.error')} retryLabel={t('common.retry')} onRetry={reloadBudget} />
-        ) : !online && status === 'reconnecting' ? (
-          <StateView kind="error" title={t('budget.offline')} retryLabel={t('common.retry')} onRetry={reconnect} />
         ) : (
           <StateView kind="loading" title={t('budget.loading')} />
         )}

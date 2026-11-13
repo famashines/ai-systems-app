@@ -60,7 +60,7 @@ export function Screen({ title, start, end, children }: { title: string; start?:
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.fill}>
         <View style={styles.header}>
           <View style={styles.slot}>{start}</View>
-          <AppText variant="title" accessibilityRole="header" numberOfLines={2} style={styles.title}>
+          <AppText variant="title" accessibilityRole="header" numberOfLines={1} style={styles.title}>
             {title}
           </AppText>
           <View style={styles.slot}>{end}</View>

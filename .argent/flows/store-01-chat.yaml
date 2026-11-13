@@ -21,7 +21,6 @@ steps:
   - await: { visible: { id: chat-input }, timeout: 30000 }
   - echo: Let the first screen settle, or the tap on the chat input comes before the screen takes input.
   - await: { idle: true, timeout: 9000 }
-  - echo: Each capture adds this task to the Tasks list. Change the text when you capture again, so the list does not repeat one task.
   - tap: { id: chat-input }
   - tool: keyboard
     args: { text: "Draft a short thank-you note to a client" }
@@ -31,10 +30,7 @@ steps:
   - tool: keyboard
     args: { key: enter }
   - wait: 800
-  - echo: New task on sends the message to the agent team. With it off, the message is a direct chat with the model.
-  - tap: { text: New task }
   - tap: { text: Send }
-  - echo: The agent reply ends with its cost. A model call takes some seconds.
-  - await: { visible: { text: Received } }
+  - echo: The answer ends with its cost. A model call takes some seconds.
   - await: { visible: { text: Cost }, timeout: 60000 }
   - await: { idle: true }

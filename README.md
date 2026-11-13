@@ -1,27 +1,26 @@
 # ai-systems-app
 
-Fama AI, the Android app of ai-systems. Expo SDK 58, Expo Router, TypeScript
-strict, managed workflow. The build setup is the same as `dev/taseen`
-(ADR 0012).
+Fama AI, the Android app of ai-systems: a chat with a model. Expo SDK 58,
+Expo Router, TypeScript strict, managed workflow. The build setup is the
+same as `dev/taseen` (ADR 0012). The app has no task screens since docs
+ADR 0035.
 
 ```
 src/
 ├── app/              routes only
-│   ├── _layout.tsx   providers, login guard, lock overlay
+│   ├── _layout.tsx   providers, fonts, login guard, lock overlay
 │   ├── login.tsx
-│   ├── (tabs)/       chat (index), tasks, budget, settings; tabs with no tab bar, the side menu opens them
-│   └── task/[id].tsx task detail: plan, DAG by steps, live output, controls, timeline
+│   └── (tabs)/       chat (index), budget, settings; tabs with no tab bar, the side menu opens them
 ├── components/       ui.tsx (Screen with header, AppText, Icon, IconButton, Button, Card, StateView),
-│                     drawer.tsx (side menu: sections and recent tasks), lock-screen.tsx, live-bar.tsx,
-│                     model-picker.tsx (model chip and the model and effort picker),
-│                     task.tsx (status chip, plan summary, plan actions, plan editor, useControl)
+│                     drawer.tsx (side menu: New chat, the chat list, Budget, Settings),
+│                     markdown.tsx (answers as native text, copy button), lock-screen.tsx,
+│                     model-picker.tsx (model chip and the model and effort picker)
 ├── i18n/             en.json, de.json, ur.json, t()
-├── lib/              auth, lock, cache, config, api (HTTP), live (WebSocket client),
-│                     chat (thread, deltas, topics), money (micro-USD to text),
-│                     task (detail merge, allowed controls, DAG steps, plan draft)
+├── lib/              auth, lock, cache, config, api (HTTP: models, budget),
+│                     direct (chat stream client, chat store, history), money (micro-USD to text)
 ├── state/            settings (language, theme, model, effort), session (login, lock),
-│                     live (tasks, chat, budget, models)
-└── theme.ts          colour, spacing, type and radius tokens
+│                     data (models, budget)
+└── theme.ts          colour, spacing, type, font and radius tokens
 ```
 
 ## Run
@@ -50,7 +49,6 @@ release scripts (docs/release.md, section 4).
 | -------- | ------- | --- |
 | `EXPO_PUBLIC_OIDC_ISSUER` | `https://auth.famashines.com/realms/ai-systems` | Keycloak issuer for the login |
 | `EXPO_PUBLIC_API_URL` | `https://ai.famashines.com` | gateway origin for `/api` |
-| `EXPO_PUBLIC_WS_URL` | `EXPO_PUBLIC_API_URL` with `wss` and `/ws` | WebSocket URL, only for a local stack that has `/ws` on another port |
 
 The client id is `ai-systems-app`. The redirect URI is
 `com.famashines.ai:/oauth2redirect`, a private-use scheme in reverse-domain
@@ -64,7 +62,7 @@ accepts http on `localhost`, `127.0.0.1` and `10.0.2.2`, for a local test
 issuer.
 
 zod checks the `EXPO_PUBLIC_*` values at start (`src/lib/config.ts`). The
-API and WebSocket URLs need https and wss, with the same local exception
+The API URL needs https, with the same local exception
 in a development build.
 
 ## Test
@@ -114,192 +112,16 @@ reason in this section.
   lock the app (a mark valid for 30 seconds). A reload after a change of
   the device language locks as a normal cold start.
 - Theme: follows the device, with an override in Settings.
-- Navigation: the menu button at the start of the header opens a side menu
-  (Chat, Tasks, Budget, Settings and the 10 newest tasks). The menu comes
-  from the left, and from the right in Urdu. A tap on the dimmed area, the
-  close button or the back button closes it. The back button on Tasks,
-  Budget or Settings goes to Chat.
-- Live connection: one WebSocket for each signed-in session (also while
-  locked). See "Live tasks", "Chat" and "Budget" below.
-
-## Live tasks
-
-The app uses the contracts v0.5.0 schemas for each API answer
-(`TaskListResultV1`, `TaskDetailV1`, `TaskOutputV1`, `AgentListResultV1`,
-`ModelListResultV1`, `ConversationThreadResultV1`, `BudgetMonthV1`, `ProblemJson`) and each WebSocket frame
-(`ClientMessageV1`, `ServerMessageV1`). A frame that does not parse (for
-example a message type from a later contracts version) does not close the
-socket: the app ignores it and counts it. If that frame has the type
-`notice`, the app also loads the snapshot again, so no change is lost.
-
-```
-app                                  socket-gateway        api-gateway
- | new WebSocket(wsUrl), no token in the URL |                    |
- | hello { v: 1, token, lastSeq? } --------> |                    |
- | <------------- welcome { heartbeatMs }    |                    |
- | subscribe { topics: ["tasks", "budget", "conversation:<id>"] } |
- | <------------- subscribed { fromSeq }     |                    |
- | GET /api/tasks, thread and budget (when a snapshot is necessary) ->
- | <------------- notice { seq, docId, rev, data, commandId? }    |
- | subscribe / unsubscribe { topics: ["task:<taskId>"] } -------> |
- | <------------- delta { taskId, callId, attempt, i, text }      |
-```
-
-First load and reconnect:
-
-- The first connect has no `lastSeq`. A reconnect sends `lastSeq` and all
-  topics in the first `subscribe`. A stored `lastSeq` of 0 counts as no
-  `lastSeq`.
-- The app reads the snapshot after `subscribed`, never before. It reads
-  it when it has no `lastSeq`, after `resync` (before or after
-  `subscribed`; the only reason is `too_old`), and when `fromSeq` is
-  higher than `lastSeq + 1`. The snapshot is the task list, the first page
-  of the thread and the budget month. The thread and the budget are not
-  cached, so the app also reads them at the first `subscribed` of each
-  session.
-- Only the `subscribed` answer to the first `subscribe` of a socket starts
-  the session. A `subscribed` for a later `task:<id>` topic reads the
-  detail of that task (`GET /api/tasks/<id>`), because a later topic
-  starts at the head (ARCHITECTURE 10.2). At the first `subscribed` the
-  app reads the detail of each task topic that it has no detail for, and
-  of all task topics when it reads the snapshot.
-- A topic change sends `unsubscribe` before `subscribe`, so the server
-  frees the slots first and a new task topic fits at 50 topics. When the
-  server refuses a `subscribe` (`error` `validation_failed`, too many
-  topics), the app counts it (`LiveClient.refusedSubscribes`) and forgets
-  those topics, so it sends them again at the next topic change and after
-  a reconnect.
-- A notice with `seq <= lastSeq` is dropped. A notice with a `rev` that
-  is not higher than the stored task is dropped, but its `seq` still
-  moves `lastSeq`. A snapshot item replaces a stored task when its `rev`
-  is the same or higher.
-- More pages: `before` = `createdAt` and `beforeId` = `taskId` of the
-  last task in the list (the list order is `createdAt`, then `taskId`,
-  newest first).
-
-Connection rules:
-
-| Event | What the app does |
-| ----- | ----------------- |
-| a new access token (refresh 30 s before expiry) | `reauth { token }` on an open socket (also between `hello` and `subscribed`); before the socket opens, `hello` takes the new token |
-| each `heartbeatMs` (at least 5 s), and when the app comes to the foreground | `ping`; no `pong` in 10 s closes and reconnects |
-| server `ping` | `pong` with the same `t` |
-| close `4401` | refresh the token, then reconnect; sign out if the refresh is refused; backoff if the refresh has a network error. The third `4401` in one minute with no stable session signs out, and the login screen shows "The server did not accept your sign-in." |
-| close `1012` | reconnect at once after a stable session, else with backoff |
-| close `4429`, `1013`, `4400`, `4408`, `1006`, other | reconnect with backoff |
-| no `subscribed` in 15 s after the socket opens | close and reconnect with backoff |
-| `resync`, or a `notice` that does not parse | forget `lastSeq` (`resync` only), load the snapshot again; requests in 0.5 s give one read, and requests during a read give one more read after it |
-| the app comes to the foreground while it waits for a backoff | connect at once |
-
-One connect runs at a time. Each connect has a generation number that the
-client checks after each wait, and `hello` goes only to the socket that
-opened. A socket that the client replaces is closed first.
-
-Backoff: 1 s, 2 s, 4 s ... up to 30 s (`WsLimits`), each multiplied by a
-random factor from 0.5 to 1, at least 1 s. Only a stable session resets
-it: 10 s after `subscribed`, or the first `notice` or `pong` after
-`subscribed`. `welcome` alone does not reset it.
+- Navigation: the menu button at the start of the header opens a side menu:
+  New chat, the list of chats, and Budget and Settings at the bottom. The
+  menu comes from the left, and from the right in Urdu. A tap on the
+  dimmed area, the close button or the back button closes it. The back
+  button on Budget or Settings goes to Chat.
+- Data: the app uses HTTP only. It reads the model list and the budget
+  after sign-in, and the budget again after each answer. There is no
+  WebSocket.
 
 ## Chat
-
-```
-app                                api-gateway / socket-gateway
- | POST /api/conversations/<id>/messages { text, newTask, model?, effort? }, Idempotency-Key
- | <-- 202 { messageId, intent, taskId? }
- | <-- notice conversation:<id> owner message { commandId }      "Received"
- | <-- notice conversation:<id> owner message rev 2 { taskId }
- | subscribe task:<taskId> -->
- | <-- delta { attempt, i, text } ...                            live text
- | <-- notice conversation:<id> agent message { text, costMicroUsd? }
- | unsubscribe task:<taskId> --> <-- unsubscribed
-```
-
-- One conversation for each device (M2). The app makes a lower-case UUID
-  v4 at the first start and keeps it in the sqlite cache
-  (`chat.conversationId`). Sign-out keeps it, so the thread is there
-  again after the next sign-in; the id has no data, and each read needs
-  the token.
-- Composer: one row in a pill-shaped bar at the bottom. The lines "The
-  next message starts a new task." and "Your next message goes to the
-  task" show above the row.
-
-  ```
-  ( task ) | Message Fama AI...            | ( GPT-5 ) ( ^ )
-                                             (  High )
-   switch     input, multiline, max 160 dp   model chip  send
-  ```
-
-  Each control is 48 dp or more. The task switch has a task icon and no
-  text; TalkBack reads "New task" and its state. Send is a round filled
-  button with an arrow.
-- New task: the task switch at the start of the row. When it is on, the
-  next message has `newTask: true` and goes to the agent team, and the
-  switch goes off after the send. When it is off, the message is a direct
-  chat message (Direct chat, below). To answer or steer a task, use
-  "Reply to this task".
-- Reply to a task: an agent reply has "Reply to this task" only while
-  its task is `clarifying`, `running` or `paused` (the status of the task
-  list first, because a stored detail can be old after its topic is
-  unsubscribed). For other statuses the server refuses the reply, so the
-  button does not show. The composer then shows the task title and
-  "Cancel reply", the New task switch is off, and the next message has
-  the `taskId` of that task (`newTask: false`, no `mode`).
-  conversation-hub makes it an `answer` for a `clarifying` task and a
-  `steer` for a running or paused task. To change a plan, use the plan
-  buttons.
-- Thread: `GET /api/conversations/<id>/messages?limit=50`, newest first,
-  shown in an inverted list (newest at the bottom). Older pages use
-  `before` = `createdAt` and `beforeId` = `messageId` of the last item of
-  the last page. A page is limited by bytes, so it can have fewer items
-  than `limit`: only an empty page is the end. When a reload of the first
-  page (after a snapshot) shares no `messageId` with the stored items, the
-  app drops the stored items and starts the paging again from that page.
-  Notices of
-  `conversation:<id>` merge by `docId` and `rev`, the same as tasks.
-- Task topics: the app subscribes `task:<taskId>` for each task of the
-  thread whose newest message is an owner message (it waits for a
-  reply), and for each task whose status in the task list is not
-  `blocked`, `completed`, `failed`, `cancelled` or `rejected`. So a
-  refusal reply to a second message does not stop the live text of a
-  running task. At most 50 topics in total, the newest tasks first.
-- Deltas: the state is kept by `(taskId, callId)`. The text is the parts
-  in index order (an object by index, so a large `i` costs no memory); a
-  lost delta is a gap. When `attempt` grows, the app
-  drops the text of the earlier attempt and starts again at `i = 0`. A
-  delta of an older attempt is dropped. The live text goes away when an
-  agent reply of the task came after the last delta and the task status
-  in the task list is `completed` or `failed`: then that reply is the
-  final run reply. A reply while the task still runs (for example the
-  refusal of a second message) does not hide the live text. The app takes deltas only for the task topics that
-  it has now, and after `unsubscribed` it removes the live text of those
-  tasks.
-- The live text has no TalkBack live region (each delta would be read);
-  the agent reply has a polite live region.
-- Cost: an agent reply shows `costMicroUsd` (integer micro-USD, all LLM
-  attempts of its task) in USD with the number format of the language:
-  4 decimals under 0.01 USD, else 2. Under 0.0001 USD the text is
-  "under $0.0001". The app never stores the amount as a float.
-
-| Status | When |
-| ------ | ---- |
-| Sending | at once after Send; the app makes a lower-case UUID v4 (`expo-crypto`) as `Idempotency-Key` |
-| Received | the message is in the thread: the notice with the same `commandId`, or a snapshot with its `messageId` |
-| Still processing | 10 s after Send with no notice |
-| Service not available. Trying again. | 502 or 503: up to 4 attempts with backoff; 429: the same, but it waits `Retry-After` |
-| Not sent, with Send again | a network error, or the last attempt failed; Send again uses the same key |
-| The server did not accept this message. | another problem answer (400, 409, 413, 422), or a text that does not fit `PostOwnerMessageCommandPayloadV1`; no retry. The input takes at most 20000 characters. |
-
-A 401 answer refreshes the token and sends the request one more time.
-TalkBack reads each status change of a message (polite live region).
-
-Offline: the app keeps the task list (the newest 200 tasks) and `lastSeq`
-in the sqlite cache (key `live.tasks`), only after a snapshot. While the socket is not
-connected, the Tasks screen shows "Offline, last update hh:mm" and the
-chat input, the New task switch, the model chip and Send are off, and the Budget form
-cannot save. Sign-out (also from the lock screen, or when
-the session ends) removes `live.tasks` and keeps the settings.
-
-## Direct chat
 
 ```
 app                                           api-gateway --> ai-proxy --> OpenRouter
@@ -309,8 +131,8 @@ app                                           api-gateway --> ai-proxy --> OpenR
  | close the request                                      Stop
 ```
 
-- Docs ADR 0034. The model gets only the messages of the chat: no system
-  prompt, no task, no agent. `src/lib/direct.ts` has the stream client and
+- Docs ADR 0034 and ADR 0035. The model gets only the messages of the
+  chat: no system prompt. `src/lib/direct.ts` has the stream client and
   the chat store.
 - History: the store saves each chat in the sqlite cache (`direct.history`
   for the list, `direct.chat.<chatId>` for the messages) when you send a
@@ -337,27 +159,58 @@ app                                           api-gateway --> ai-proxy --> OpenR
   (scroll sideways), rules, links. HTML shows as text. A link opens only
   with `http` or `https`. An open code block in a text that still comes
   shows as code.
-- Copy: each of your messages, each answer and each task reply has a copy
-  button. It shows a check mark for 2 s and TalkBack says "Copied". It
+- Copy: each of your messages and each answer has a copy button. It shows a check mark for 2 s and TalkBack says "Copied". It
   uses `Clipboard` of React Native core (deprecated; it logs one warning);
   change to `expo-clipboard` with the next native release.
 - When you scroll up more than 240 dp, a round button goes to the latest
   message.
-- Direct messages and task messages are in one list, in time order.
+
+## Design
+
+```
++----------------------------------+
+| [menu]   chat title    [new chat]|   header: the title is the first message
+|                                  |
+|            ( your message )  blue tint bubble, system sans
+|            [copy]                |
+| Answer text in Literata, no      |   the answer is a page, not a bubble
+| bubble, 17/28, full width        |
+| [copy] [again]  Cost $0.0031     |
+|                                  |
+| +------------------------------+ |
+| | Message Fama AI...           | |   composer
+| | (model chip)          (send) | |   send is stop while an answer comes
+| +------------------------------+ |
++----------------------------------+
+```
+
+- One strong choice: the answers are set in Literata (a reading serif,
+  regular, italic, semibold, semibold italic), because reading the answer
+  is the main job of the app. All other text is the system sans.
+  `src/app/_layout.tsx` loads the four font files with `expo-font`; they
+  are JS assets, so they come with an EAS Update. Until they load, and for
+  scripts that Literata does not have (Urdu), Android uses the system
+  font.
+- Colours are the brand tokens of `logo-master/SPEC.md`, with no new
+  colour. Your message uses `primaryContainer`.
+- An empty chat shows the mark, the question "What do you want to know?"
+  and three starter lines. A starter line puts its text in the message
+  field; it does not send.
+- While the first text of an answer has not come, one blue dot pulses.
+  With "Remove animations" on in Android, the dot does not move.
 
 ## Model and effort
 
-The owner chooses the model and the reasoning effort of a new task.
-There is no Auto. Send stays off until a model is chosen. A reply to a
-task needs no model.
+The owner chooses the model and the reasoning effort of the chat. There
+is no Auto. Send stays off until a model is chosen.
 
 ```
 app                                   api-gateway -> ai-proxy
- | GET /api/models (after the first subscribed) ------------>
+ | GET /api/models (after sign-in) -------------------------->
  | <-- 200 { items: [{ id, name, efforts, defaultEffort? }] }  (ModelListResultV1)
  | <-- 503 (cold cache): wait 2 s, read one more time
- | picker opens after a failed read, or with an empty list: read again
- | POST .../messages { text, newTask, model, effort? } ---------------->
+ | picker opens after a failed read: read again
+ | POST /api/chat { chatId, model, effort?, messages } ------->
 ```
 
 - The model chip in the composer shows a short model name and, on a
@@ -384,96 +237,16 @@ app                                   api-gateway -> ai-proxy
 - A saved model that is not in the list shows as "Choose model". A saved
   effort that the model does not have is not sent. Until the list loads,
   the app uses the saved model, and the chip shows the last part of its id.
-- The app sends `model` and `effort` only in a message with no `taskId`.
-  A reply to a task never has them, and the chip is off while you reply.
-  When conversation-hub makes a message without a `taskId` an answer or
-  a steer, it ignores them.
 - The picker closes when the app locks, the same as the side menu.
-- The task screen shows "Model: <id>" (or "Model: Auto") and
-  "Effort: <effort>" when the task has an effort.
-
-## Task detail and plans
-
-```
-Tasks list row / chat "Open task"  -->  /task/<taskId>
-  watch(taskId) adds task:<taskId> to the topics (first, before thread tasks)
-  <-- subscribed task:<taskId>  -->  GET /api/tasks/<taskId>     TaskDetailV1
-  <-- notice task:<taskId> rev n                                 replaces the detail when rev is higher
-  <-- delta { callId, attempt, i, text }                         live text by (taskId, callId)
-  subtask done      -->  GET /api/tasks/<id>/subtasks/<sid>/output
-  task completed    -->  GET /api/tasks/<id>/output
-```
-
-- The screen shows the status (an icon glyph, a text and a colour, never
-  colour only), the mode, the cost, the reason, the owner controls, the
-  current orchestrator call (`currentCall`: plan, aggregate or check) with
-  its live text, the plan by steps, and the timeline.
-- DAG: the subtasks are grouped in steps by depth of `dependsOn` (step 1
-  has no dependencies). Each subtask has its agent, "After <titles>",
-  tries, tokens, cost, the next try time and the failure reason. TalkBack
-  reads the DAG and the timeline as lists.
-- Live output: a running subtask shows the text of its `callId` (the
-  same delta state as the chat, kept by `(taskId, callId)`, with the
-  attempt rule). When the subtask is `done`, the screen shows its output
-  from the read and no longer shows the delta text. The live text has no
-  TalkBack live region.
-- Checkpoints: the latest checkpoint of a subtask shows its reason and
-  deadline. Approve and Refuse (with an optional comment) show only while
-  the checkpoint is `open` and the subtask is `awaiting_approval`.
-- Plan preview in the chat: each task of the thread whose detail and
-  task list status is `awaiting_approval` gets a plan card: each subtask
-  with its agent, dependencies, estimated cost and time, and approval
-  rule; Approve plan, Edit plan (opens the task screen in edit mode),
-  Reject plan (with a reason, required) and Open task.
-- Edit plan: title, instructions, agent (enabled agents from
-  `GET /api/agents`), "Starts after" (dependsOn), needs approval, move up
-  or down, remove, add (a new `subtaskId` from `expo-crypto`). The app
-  drops the estimates; the server makes them again. A change of the agent
-  removes the `model` of that subtask, because orchestration refuses a
-  model that the agent does not use. The editor shows only while the task
-  is `awaiting_approval` with a plan. Before it sends, the
-  app checks the plan with `PlanSubtasks` (1 to 20 subtasks, a title and
-  instructions for each, no cycle). If a new plan version comes while you
-  edit, the editor says so and loads the new plan on request.
-
-Owner controls (`POST /api/tasks/<taskId>/<control>`):
-
-| Control | Shown when |
-| ------- | ---------- |
-| Approve, Edit, Reject plan | task `awaiting_approval` with a plan |
-| Pause | task `running` |
-| Resume | task `paused`, or `blocked` with a `blocked` subtask (a failed subtask needs Retry) |
-| Cancel run (with a confirm step) | task `running`, `paused` or `blocked` |
-| Cancel task (with a confirm step) | task `submitted`, `clarifying` or `planning` |
-| Retry subtask | subtask `failed` or `blocked`, during a run |
-| Change agent (reassign) | subtask not `running`, `done`, `cancelled` or `skipped`, during a run |
-| Auto-run switch (set mode) | task not ended |
-| Resolve checkpoint | checkpoint `open` and subtask `awaiting_approval` |
-
-- Each action has its own `Idempotency-Key` (a lower-case UUID v4). A
-  press of the same action with the same body after a network error or a
-  503 uses the same key again; any other press makes a new key.
-- 502, 503 and 429: up to 4 attempts with backoff (the same rule as the
-  chat), then "Service not available. Try again later."
-- 409: "The task changed. The screen shows the new state now." The app
-  reads the detail again.
-- 400, 403, 404 and other problems: "The server did not accept this
-  action."
-- A network error: "Not sent. Check the connection and try again."
-- The controls are off while the socket is not connected.
 
 ## Budget
 
-- The Budget tab reads `GET /api/budget` (the current month in the owner
-  time zone) at the first `subscribed` and with each snapshot. A 404
-  means that no cap is set: the screen says that the agents cannot call a
-  model until a cap is set.
+- The Budget screen reads `GET /api/budget` (the current month in the
+  owner time zone) after sign-in, after each answer, after Save and from
+  Try again. A 404 means that no cap is set: the screen says that no
+  model call is possible until a cap is set.
 - It shows the month, the monthly cap, the soft cap, spent, reserved and
   remaining, and "Over the cap" when `overCapMicroUsd` is above 0.
-- A `budget` notice for the shown month with a higher `rev` replaces the
-  view. A notice for a later month, or any notice while no month is shown,
-  reads the month again. Notices for older months (a cap change notifies
-  every month) are dropped.
 - Set the cap: the monthly cap and an optional soft cap in USD, with a dot
   or a comma as the decimal sign. The app reads the text to integer
   micro-USD with no float, and shows the read amount under each field
@@ -489,64 +262,12 @@ Owner controls (`POST /api/tasks/<taskId>/<control>`):
 
 ## Maestro
 
-Status: the flow is written, but it was never run, and it does not fit
-the local system of M1-05 yet. Maestro is not part of the toolchain now
-(owner decision).
+Status: the flow is written, but it was never run. Maestro is not part of
+the toolchain now (owner decision).
 
-`.maestro/live-tasks.yaml` signs in, sends a message in the chat (it
-starts a task), sees the task in the list, sets airplane mode, sends a
-second task through the API from the host while the phone is offline (two
-times with the same `Idempotency-Key`), turns airplane mode off, and
-checks that each task shows once.
-
-`.maestro/plan-approval.yaml` signs in, starts a new task in approval
-mode, waits for the plan card, approves the plan, opens the task, and
-waits until the task shows "Completed".
-
-`.maestro/budget-cap.yaml` signs in, opens the Budget tab, sets a monthly
-cap of 0.05 USD with a soft cap of 0.04 USD, and waits until the view
-shows the cap.
-
-What is missing before it can run against the local system:
-
-- The dev issuer of the local system has no authorization endpoint and
-  no refresh grant. The app signs in with the code flow and PKCE and
-  refreshes the token, so it needs an issuer with both (for example a
-  local Keycloak realm with the client `ai-systems-app` and the redirect
-  `com.famashines.ai:/oauth2redirect`). The flow also needs a client with
-  the password grant (`TOKEN_CLIENT_ID`) for the API step.
-- The issuer host must be the same for the emulator and the containers:
-  the token `iss` must equal `EXPO_PUBLIC_OIDC_ISSUER`, and the gateways
-  check `iss` against `OIDC_ISSUER`. The local issuer gives
-  `http://issuer:8080/realms/ai-systems`, a name that only the containers
-  resolve. `10.0.2.2` works only from the emulator, `localhost` only from
-  the host.
-- Ports of the local system: api-gateway 8080, socket-gateway 8081,
-  issuer 8082. `/api` and `/ws` are on different ports, so the build needs
-  `EXPO_PUBLIC_API_URL=http://10.0.2.2:8080` and
-  `EXPO_PUBLIC_WS_URL=ws://10.0.2.2:8081/ws`.
-- React Native sends the WebSocket `Origin` from the URL, here
-  `http://10.0.2.2:8081`. The socket-gateway `ALLOWED_ORIGINS` must have
-  it.
-- The Maestro CLI.
-
-When these are in place:
-
-```
-EXPO_PUBLIC_OIDC_ISSUER=<issuer URL that the emulator and the containers both reach> \
-EXPO_PUBLIC_API_URL=http://10.0.2.2:8080 \
-EXPO_PUBLIC_WS_URL=ws://10.0.2.2:8081/ws npm run android
-adb shell pm clear com.android.chrome
-maestro test .maestro/live-tasks.yaml .maestro/budget-cap.yaml .maestro/plan-approval.yaml \
-  -e API_URL=http://localhost:8080 \
-  -e ISSUER=<the same issuer URL, as the host reaches it> \
-  -e TOKEN_CLIENT_ID=<client with the password grant> \
-  -e USERNAME=<test owner> -e PASSWORD=<password>
-```
-
-`pm clear` removes the issuer cookie of the last run from Chrome, so the
-login page shows again. The token of `TOKEN_CLIENT_ID` must have the
-audience `ai-systems-app` and the role `owner`.
+`.maestro/budget-cap.yaml` signs in, opens the Budget screen, sets a
+monthly cap of 0.05 USD with a soft cap of 0.04 USD, and waits until the
+view shows the cap.
 
 ## Known limits
 
@@ -557,25 +278,13 @@ audience `ai-systems-app` and the role `owner`.
   (ai-proxy README, Known limits).
 - The Android recents screen can show a thumbnail of the last screen. The
   app does not set `FLAG_SECURE`. Reconsider in M9 hardening.
-- The thread and the budget are not in the offline cache. After a cold
-  start with no connection the chat and the Budget tab are empty; the
-  tasks are in the Tasks list.
-- One conversation for each device. There is no list of threads and no
-  way to start a second thread (M2 scope).
-- Push deferred (owner decision). There are no push notifications, no
-  Firebase module and no device registration in this version.
-- The task detail is not in the offline cache. Offline, a task that was
-  not loaded in this session shows "Loading the task".
-- Each subtask output is read once for each run when the subtask is
-  `done`. It is not read again when only the view changes.
-- A task that is older than the loaded task list and whose newest thread
-  message is an owner message stays subscribed (at most 47 task topics).
-- Each `conversation:<id>` and `budget` notice also moves the `lastSeq`
-  of the task cache, so the app writes `live.tasks` for each notice, the
-  same as for a `tasks` notice.
-- The task list still pages with `items.length === limit`. The task list
-  of projections is not limited by bytes, so this is correct for it, but
-  it is not the rule of the thread.
+- The budget and the model list are not in the offline cache. With no
+  connection the Budget screen shows an error with Try again, and a
+  message gets "The connection failed".
+- The app does not know that the phone is offline before a request fails.
+- Push: there are no push notifications.
+- The back-end still has the task services (orchestration, agents,
+  projections of tasks). The app does not use them (docs ADR 0035).
 - A refresh with the same refresh token joins the request that waits,
   so the server normally sees each refresh token one time. React Native
   fetch has no read timeout and `expo-auth-session` takes no
@@ -587,10 +296,6 @@ audience `ai-systems-app` and the role `owner`.
   end the session. With refresh token rotation the worst case is an
   `invalid_grant` on the new request: the app signs out, and the user
   signs in again. Each caller stops waiting after 15 s.
-- `1013` is not in contracts `WsCloseCode` v0.2.0 (M2-02); the app has a
-  local constant.
-- Invalid WebSocket frames are only counted in memory
-  (`LiveClient.invalidFrames`); there is no telemetry yet.
 
 ## Release
 

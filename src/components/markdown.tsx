@@ -4,7 +4,7 @@ import { AccessibilityInfo, Clipboard, Linking, ScrollView, StyleSheet, Text, Vi
 
 import { AppText, IconButton } from '@/components/ui';
 import { useSettings } from '@/state/settings';
-import { radius, spacing, tableCell, type } from '@/theme';
+import { fonts, radius, spacing, tableCell, type } from '@/theme';
 
 export const copiedShowMs = 2_000;
 
@@ -31,21 +31,25 @@ export function CopyButton({ text, label, testID }: { text: string; label: strin
   );
 }
 
-function Inline({ tokens }: { tokens: Token[] }): ReactNode {
+const face = (bold: boolean, italic: boolean) => ({ fontFamily: bold ? (italic ? fonts.serifBoldItalic : fonts.serifBold) : italic ? fonts.serifItalic : fonts.serif });
+
+function Inline({ tokens, bold = false, italic = false }: { tokens: Token[]; bold?: boolean; italic?: boolean }): ReactNode {
   const { colors } = useSettings();
   return tokens.map((token, index) => {
     const item = token as Tokens.Generic;
-    const inner = item.tokens ? <Inline tokens={item.tokens} /> : (item.text as string | undefined);
+    const strong = bold || token.type === 'strong';
+    const slanted = italic || token.type === 'em';
+    const inner = item.tokens ? <Inline tokens={item.tokens} bold={strong} italic={slanted} /> : (item.text as string | undefined);
     switch (token.type) {
       case 'strong':
         return (
-          <Text key={index} style={styles.strong}>
+          <Text key={index} style={face(true, italic)}>
             {inner}
           </Text>
         );
       case 'em':
         return (
-          <Text key={index} style={styles.em}>
+          <Text key={index} style={face(bold, true)}>
             {inner}
           </Text>
         );
@@ -103,8 +107,8 @@ function Table({ token }: { token: Tokens.Table }) {
   const row = (cells: Tokens.TableCell[], key: number, head: boolean) => (
     <View key={key} style={[styles.tableRow, { borderColor: colors.outlineVariant }]}>
       {cells.map((cell, index) => (
-        <AppText key={index} selectable variant={head ? 'label' : 'body'} style={styles.cell}>
-          <Inline tokens={cell.tokens} />
+        <AppText key={index} selectable variant={head ? 'answerHead3' : 'answer'} style={styles.cell}>
+          <Inline tokens={cell.tokens} bold={head} />
         </AppText>
       ))}
     </View>
@@ -129,8 +133,8 @@ function Blocks({ tokens }: { tokens: Token[] }): ReactNode {
       case 'heading': {
         const heading = token as Tokens.Heading;
         return (
-          <AppText key={index} selectable accessibilityRole="header" variant={heading.depth === 1 ? 'headline' : heading.depth === 2 ? 'title' : 'label'}>
-            <Inline tokens={heading.tokens} />
+          <AppText key={index} selectable accessibilityRole="header" variant={heading.depth === 1 ? 'answerHead1' : heading.depth === 2 ? 'answerHead2' : 'answerHead3'}>
+            <Inline tokens={heading.tokens} bold />
           </AppText>
         );
       }
@@ -149,7 +153,7 @@ function Blocks({ tokens }: { tokens: Token[] }): ReactNode {
           <View key={index} style={styles.block}>
             {list.items.map((item, at) => (
               <View key={at} style={styles.item}>
-                <AppText color="onSurfaceVariant">{item.task ? (item.checked ? '☑' : '☐') : list.ordered ? `${start + at}.` : '•'}</AppText>
+                <AppText variant="answer" color="onSurfaceVariant">{item.task ? (item.checked ? '☑' : '☐') : list.ordered ? `${start + at}.` : '•'}</AppText>
                 <View style={[styles.fill, styles.block]}>
                   <Blocks tokens={item.tokens} />
                 </View>
@@ -165,7 +169,7 @@ function Blocks({ tokens }: { tokens: Token[] }): ReactNode {
       default: {
         const block = token as Tokens.Generic;
         return (
-          <AppText key={index} selectable>
+          <AppText key={index} selectable variant="answer">
             {block.tokens ? <Inline tokens={block.tokens} /> : ((block.text as string | undefined) ?? token.raw)}
           </AppText>
         );
@@ -185,8 +189,6 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
 const styles = StyleSheet.create({
   block: { gap: spacing.sm },
   fill: { flex: 1 },
-  strong: { fontWeight: '700' },
-  em: { fontStyle: 'italic' },
   del: { textDecorationLine: 'line-through' },
   link: { textDecorationLine: 'underline' },
   code: { direction: 'ltr', borderRadius: radius.md, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },

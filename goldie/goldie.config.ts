@@ -49,15 +49,8 @@ const config = {
       kind: "screenshot",
       id: "chat",
       flow: "store-01-chat",
-      headline: { "en-US": "Your AI agents, in your pocket" },
-      subhead: { "en-US": "Send a task in the chat. Read the reply and its cost." }
-    },
-    {
-      kind: "screenshot",
-      id: "tasks",
-      flow: "store-02-tasks",
-      headline: { "en-US": "Follow every task" },
-      subhead: { "en-US": "Each task and its status, live, on one list." }
+      headline: { "en-US": "Ask. Read the answer." },
+      subhead: { "en-US": "A chat with the model that you choose, and the cost of each answer." }
     },
     {
       kind: "screenshot",

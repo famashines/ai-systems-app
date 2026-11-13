@@ -46,6 +46,8 @@ export const radius = { sm: 8, md: 12, lg: 16, xl: 24, full: 999 } as const;
 
 export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)' } as const;
 
+export const motion = { open: 240, pulse: 900 } as const;
+
 export const touchTarget = 48;
 
 export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
@@ -56,7 +58,14 @@ export const tableCell = 144;
 
 export const drawerWidth = 304;
 
-export const motion = { open: 240 } as const;
+export const fonts = {
+  serif: 'Literata_400Regular',
+  serifItalic: 'Literata_400Regular_Italic',
+  serifBold: 'Literata_600SemiBold',
+  serifBoldItalic: 'Literata_600SemiBold_Italic',
+} as const;
+
+export const mark = { thinking: 10, small: 28, empty: 44 } as const;
 
 export const type = {
   headline: { fontSize: 26, lineHeight: 34, fontWeight: '600' },
@@ -65,6 +74,11 @@ export const type = {
   body: { fontSize: 16, lineHeight: 26, fontWeight: '400' },
   bodySmall: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
   code: { fontSize: 14, lineHeight: 21, fontWeight: '400', fontFamily: 'monospace' },
+  answer: { fontSize: 17, lineHeight: 28, fontFamily: fonts.serif },
+  answerHead1: { fontSize: 24, lineHeight: 32, fontFamily: fonts.serifBold },
+  answerHead2: { fontSize: 20, lineHeight: 28, fontFamily: fonts.serifBold },
+  answerHead3: { fontSize: 17, lineHeight: 28, fontFamily: fonts.serifBold },
+  greeting: { fontSize: 30, lineHeight: 38, fontFamily: fonts.serifBold },
 } as const satisfies Record<string, TextStyle>;
 
 function luminance(hex: string): number {
