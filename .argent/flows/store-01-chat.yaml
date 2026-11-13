@@ -31,6 +31,8 @@ steps:
   - tool: keyboard
     args: { key: enter }
   - wait: 800
+  - echo: New task on sends the message to the agent team. With it off, the message is a direct chat with the model.
+  - tap: { text: New task }
   - tap: { text: Send }
   - echo: The agent reply ends with its cost. A model call takes some seconds.
   - await: { visible: { text: Received } }

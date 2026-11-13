@@ -1,24 +1,33 @@
 import type { TaskDetailV1 } from '@famashines/ai-systems-contracts';
 import { router } from 'expo-router';
-import { useRef, useState, type ComponentRef } from 'react';
+import { useRef, useState, useSyncExternalStore, type ComponentRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { Menu } from '@/components/drawer';
 import { LiveBar } from '@/components/live-bar';
+import { CopyButton, Markdown } from '@/components/markdown';
 import { ModelPicker, useChoice } from '@/components/model-picker';
 import { PlanActions, PlanSummary } from '@/components/task';
 import { AppText, Button, Card, Icon, IconButton, Screen, StateView } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { taskTextMax } from '@/lib/api';
 import type { ChatMessage } from '@/lib/chat';
+import { direct, type DirectError, type DirectMessage } from '@/lib/direct';
 import { formatUsd } from '@/lib/money';
 import { canReply, endedStatuses } from '@/lib/task';
 import { useLive, type Message, type StreamRow } from '@/state/live';
 import { useSettings } from '@/state/settings';
 import { radius, shadow, spacing, touchTarget, type } from '@/theme';
 
-type Row = { kind: 'pending'; message: Message } | { kind: 'plan'; detail: TaskDetailV1 } | { kind: 'stream'; stream: StreamRow } | { kind: 'message'; message: ChatMessage };
+type Row =
+  | { kind: 'pending'; message: Message }
+  | { kind: 'plan'; detail: TaskDetailV1 }
+  | { kind: 'stream'; stream: StreamRow }
+  | { kind: 'message'; message: ChatMessage }
+  | { kind: 'direct'; message: DirectMessage; last: boolean };
 type Reply = (taskId: string) => void;
+
+const awayOffset = 240;
 
 const openTask = (taskId: string, edit = false) => router.push({ pathname: '/task/[id]', params: edit ? { id: taskId, edit: '1' } : { id: taskId } });
 
@@ -65,11 +74,85 @@ function Pending({ message }: { message: Message }) {
   );
 }
 
+const errorKeys: Record<DirectError, Key> = {
+  network: 'chat.errorNetwork',
+  unauthorized: 'chat.errorUnauthorized',
+  rateLimited: 'chat.errorRateLimited',
+  budget: 'chat.errorBudget',
+  tooLong: 'chat.errorTooLong',
+  failed: 'chat.errorFailed',
+};
+
+function Direct({ message, last }: { message: DirectMessage; last: boolean }) {
+  const { t, colors, language } = useSettings();
+  const { online } = useLive();
+  const choice = useChoice();
+  if (message.role === 'user') {
+    return (
+      <View testID={`direct-${message.id}`} style={styles.mine}>
+        <View accessible accessibilityLabel={t('chat.you', { text: message.text })} style={[styles.owner, styles.body, { backgroundColor: colors.surfaceContainerHigh }]}>
+          <AppText selectable>{message.text}</AppText>
+        </View>
+        <CopyButton text={message.text} label={t('chat.copy')} />
+      </View>
+    );
+  }
+  const streaming = message.state === 'streaming';
+  const again = last && !streaming && online && choice.model !== undefined;
+  return (
+    <View testID={`direct-${message.id}`} style={styles.agent}>
+      {message.text ? (
+        <View accessibilityLabel={streaming ? undefined : t('chat.answer', { text: message.text })}>
+          <Markdown text={message.text} />
+        </View>
+      ) : null}
+      {streaming ? (
+        <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite">
+          {t('chat.writing')}
+        </AppText>
+      ) : null}
+      {message.state === 'stopped' ? (
+        <AppText variant="bodySmall" color="onSurfaceVariant">
+          {t('chat.stopped')}
+        </AppText>
+      ) : null}
+      {message.cut ? (
+        <AppText variant="bodySmall" color="onSurfaceVariant">
+          {t('chat.cut')}
+        </AppText>
+      ) : null}
+      {message.error ? (
+        <AppText color="error" accessibilityRole="alert" accessibilityLiveRegion="polite">
+          {t(errorKeys[message.error])}
+        </AppText>
+      ) : null}
+      {streaming ? null : (
+        <View style={styles.row}>
+          {message.text ? <CopyButton testID="copy-answer" text={message.text} label={t('chat.copy')} /> : null}
+          {again ? (
+            <IconButton
+              testID="regenerate"
+              icon={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
+              label={t('chat.regenerate')}
+              onPress={() => direct.regenerate(choice)}
+            />
+          ) : null}
+          {message.costMicroUsd === undefined ? null : (
+            <AppText variant="bodySmall" color="onSurfaceVariant">
+              {t('chat.cost', { cost: formatUsd(language, message.costMicroUsd) })}
+            </AppText>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function Stream({ stream }: { stream: StreamRow }) {
   const { t } = useSettings();
   return (
     <View testID={`stream-${stream.taskId}`} accessible accessibilityLabel={t('chat.stream', { text: stream.text })} style={styles.agent}>
-      <AppText>{stream.text}</AppText>
+      <Markdown text={stream.text} />
       <AppText variant="bodySmall" color="onSurfaceVariant">
         {t('chat.writing')}
       </AppText>
@@ -96,17 +179,19 @@ function Posted({ message, onReply }: { message: ChatMessage; onReply: Reply }) 
   return (
     <View testID={`reply-${message.messageId}`} style={styles.agent}>
       <View
-        accessible
         accessibilityLiveRegion="polite"
         accessibilityLabel={cost === null ? t('chat.reply', { text: message.text }) : t('chat.replyCost', { text: message.text, cost })}
         style={styles.body}
       >
-        <AppText selectable>{message.text}</AppText>
+        <Markdown text={message.text} />
         {cost === null ? null : (
           <AppText variant="bodySmall" color="onSurfaceVariant">
             {t('chat.cost', { cost })}
           </AppText>
         )}
+      </View>
+      <View style={styles.row}>
+        <CopyButton text={message.text} label={t('chat.copy')} />
       </View>
       {status === undefined || endedStatuses.has(status) ? null : (
         <View style={styles.actions}>
@@ -128,6 +213,9 @@ function Older() {
 
 function Thread({ onReply }: { onReply: Reply }) {
   const { t } = useSettings();
+  const chat = useSyncExternalStore(direct.subscribe, direct.get);
+  const list = useRef<FlatList<Row>>(null);
+  const [away, setAway] = useState(false);
   const { pending, streams, thread, threadLoad, threadLoaded, reloadThread, loadOlder, details, tasks } = useLive();
   const listed = (taskId: string) => tasks.find((item) => item.taskId === taskId)?.status ?? 'awaiting_approval';
   const planned = [...new Set(thread.map((message) => message.taskId).filter((taskId): taskId is string => taskId !== undefined))]
@@ -137,7 +225,10 @@ function Thread({ onReply }: { onReply: Reply }) {
     ...pending.map((message): Row => ({ kind: 'pending', message })),
     ...planned.map((detail): Row => ({ kind: 'plan', detail })),
     ...streams.map((stream): Row => ({ kind: 'stream', stream })),
-    ...thread.map((message): Row => ({ kind: 'message', message })),
+    ...[
+      ...thread.map((message): Row => ({ kind: 'message', message })),
+      ...chat.messages.map((message, index): Row => ({ kind: 'direct', message, last: index === chat.messages.length - 1 })).reverse(),
+    ].sort((a, b) => (a.kind === 'message' || a.kind === 'direct') && (b.kind === 'message' || b.kind === 'direct') ? Date.parse(b.message.createdAt) - Date.parse(a.message.createdAt) : 0),
   ];
   if (rows.length === 0) {
     if (threadLoad === 'error') return <StateView kind="error" title={t('chat.error')} retryLabel={t('common.retry')} onRetry={reloadThread} />;
@@ -145,15 +236,17 @@ function Thread({ onReply }: { onReply: Reply }) {
     return <StateView kind="empty" mark title={t('chat.empty')} />;
   }
   return (
-    <>
+    <View style={styles.thread}>
       {threadLoad === 'error' ? <StateView kind="error" title={t('chat.error')} retryLabel={t('common.retry')} onRetry={reloadThread} /> : null}
       <FlatList
+        ref={list}
         testID="chat-list"
         inverted
+        onScroll={(event) => setAway(event.nativeEvent.contentOffset.y > awayOffset)}
         accessibilityLabel={t('chat.messages')}
         data={rows}
         keyExtractor={(row) =>
-          row.kind === 'pending' ? `pending-${row.message.key}` : row.kind === 'plan' ? `plan-${row.detail.taskId}` : row.kind === 'stream' ? `stream-${row.stream.taskId}` : row.message.messageId
+          row.kind === 'pending' ? `pending-${row.message.key}` : row.kind === 'plan' ? `plan-${row.detail.taskId}` : row.kind === 'stream' ? `stream-${row.stream.taskId}` : row.kind === 'direct' ? row.message.id : row.message.messageId
         }
         renderItem={({ item }) =>
           item.kind === 'pending' ? (
@@ -162,6 +255,8 @@ function Thread({ onReply }: { onReply: Reply }) {
             <PlanCard detail={item.detail} />
           ) : item.kind === 'stream' ? (
             <Stream stream={item.stream} />
+          ) : item.kind === 'direct' ? (
+            <Direct message={item.message} last={item.last} />
           ) : (
             <Posted message={item.message} onReply={onReply} />
           )
@@ -171,7 +266,18 @@ function Thread({ onReply }: { onReply: Reply }) {
         ListFooterComponent={Older}
         contentContainerStyle={styles.list}
       />
-    </>
+      {away ? (
+        <View style={styles.latest}>
+          <IconButton
+            testID="latest"
+            filled
+            icon={{ ios: 'arrow.down', android: 'arrow_downward', web: 'arrow_downward' }}
+            label={t('chat.latest')}
+            onPress={() => list.current?.scrollToOffset({ offset: 0, animated: true })}
+          />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -184,12 +290,15 @@ export default function Chat() {
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const replyTitle = replyTo ? (details[replyTo]?.title ?? tasks.find((item) => item.taskId === replyTo)?.title ?? t('task.title')) : null;
   const choice = useChoice();
+  const busy = useSyncExternalStore(direct.subscribe, () => direct.get().busy);
+  const toTeam = newTask || replyTo !== null;
   const needsModel = replyTo === null && choice.model === undefined;
-  const canSend = online && text.trim() !== '' && !needsModel;
+  const canSend = online && text.trim() !== '' && !needsModel && (toTeam || !busy);
 
   const submit = () => {
     if (!canSend) return;
-    send(text, newTask, replyTo ?? undefined, choice);
+    if (toTeam) send(text, newTask, replyTo ?? undefined, choice);
+    else direct.send(text, choice);
     setText('');
     setNewTask(false);
     setReplyTo(null);
@@ -269,7 +378,11 @@ export default function Chat() {
             </Pressable>
             <View style={styles.fill} />
             <ModelPicker disabled={!online || replyTo !== null} />
-            <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled disabled={!canSend} onPress={submit} />
+            {busy && !toTeam ? (
+              <IconButton testID="stop" icon={{ ios: 'stop.fill', android: 'stop', web: 'stop' }} label={t('chat.stop')} filled onPress={direct.stop} />
+            ) : (
+              <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled disabled={!canSend} onPress={submit} />
+            )}
           </View>
         </View>
       </View>
@@ -281,6 +394,9 @@ const styles = StyleSheet.create({
   list: { gap: spacing.lg, paddingVertical: spacing.md },
   owner: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.lg, borderCurve: 'continuous', maxWidth: '85%', alignSelf: 'flex-end' },
   agent: { gap: spacing.sm, alignSelf: 'stretch' },
+  mine: { alignItems: 'flex-end' },
+  thread: { flex: 1, gap: spacing.md },
+  latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },
   body: { gap: spacing.xs },
   shrink: { flexShrink: 1 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

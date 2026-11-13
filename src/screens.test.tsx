@@ -4,8 +4,9 @@ import { reloadAppAsync } from 'expo';
 import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useLocales } from 'expo-localization';
+import { fetch as streamFetch } from 'expo/fetch';
 import type { ReactElement } from 'react';
-import { AppState, I18nManager, Text, type AppStateStatus } from 'react-native';
+import { AppState, Clipboard, I18nManager, Text, type AppStateStatus } from 'react-native';
 
 import Budget from '@/app/(tabs)/budget';
 import Chat from '@/app/(tabs)/index';
@@ -20,6 +21,7 @@ import { shortName } from '@/components/model-picker';
 import { Button, StateView } from '@/components/ui';
 import * as auth from '@/lib/auth';
 import { getItem, removeItem, setItem } from '@/lib/cache';
+import { direct, notifyMs } from '@/lib/direct';
 import { modelsRetryMs } from '@/lib/api';
 import { lockAfterMs } from '@/lib/lock';
 import { cachedTasksMax, LiveProvider, reloadDelayMs, slowAfterMs, tasksCacheKey, updatedShowMs, useLive } from '@/state/live';
@@ -34,6 +36,8 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn(), navigate: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
 }));
+
+jest.mock('expo/fetch', () => ({ fetch: jest.fn() }));
 
 jest.mock('expo-constants', () => ({ expoConfig: { version: '0.1.0' } }));
 
@@ -58,6 +62,13 @@ const realUuid = () => jest.requireActual<typeof import('node:crypto')>('node:cr
 function Probe() {
   const { status, locked } = useSession();
   return <Text>{`${status} ${locked ? 'locked' : 'open'}`}</Text>;
+}
+
+async function sendToTeam() {
+  const toggle = screen.getByTestId('new-task');
+  const { checked, disabled } = toggle.props.accessibilityState as { checked: boolean; disabled: boolean };
+  if (!checked && !disabled) await fireEvent.press(toggle);
+  await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
 }
 
 async function show(ui: ReactElement) {
@@ -568,7 +579,7 @@ describe('Live', () => {
       await screen.findByText('Month 2026-11');
       await delta(socket, 1, 0, 'Old stream');
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Pending text');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       await screen.findByText('Not sent');
       expect(screen.getByText('Old stream')).toBeOnTheScreen();
       await waitFor(async () => expect(await getItem(tasksCacheKey)).not.toBeNull());
@@ -610,14 +621,14 @@ describe('Live', () => {
       await show(<Chat />);
       const socket = await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), '  Plan the week  ');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       expect(screen.getByText('Plan the week')).toBeOnTheScreen();
       expect(screen.getByText('Sending')).toBeOnTheScreen();
       expect(screen.getByLabelText('Message')).toHaveProp('value', '');
       const post = posts()[0]!;
       const key = post.headers.get('Idempotency-Key')!;
       expect(Id.safeParse(key).success).toBe(true);
-      expect(post.body).toEqual({ text: 'Plan the week', newTask: false, model: 'openai/gpt-5' });
+      expect(post.body).toEqual({ text: 'Plan the week', newTask: true, model: 'openai/gpt-5' });
       await said(socket, 11, owner(ids.taskB, 'Plan the week'), key);
       expect(screen.getByText('Received')).toBeOnTheScreen();
       expect(screen.getAllByText('Plan the week')).toHaveLength(1);
@@ -642,10 +653,10 @@ describe('Live', () => {
       expect(socket.sent).toContainEqual({ type: 'subscribe', topics: [`conversation:${fresh}`] });
       server.on(`POST /api/conversations/${fresh}/messages`, json(202, { conversationId: fresh, messageId: ids.taskB, intent: 'new_task' }));
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Another topic');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       await waitFor(() => expect(posts()).toHaveLength(1));
       expect(posts()[0]!.path).toBe(`/api/conversations/${fresh}/messages`);
-      expect(posts()[0]!.body).toEqual({ text: 'Another topic', newTask: false, model: 'openai/gpt-5' });
+      expect(posts()[0]!.body).toEqual({ text: 'Another topic', newTask: true, model: 'openai/gpt-5' });
     });
 
     it('does not show a late page of the old conversation in the new chat', async () => {
@@ -669,14 +680,14 @@ describe('Live', () => {
       expect(screen.getByRole('switch', { name: 'New task' })).toBeChecked();
       expect(screen.getByText('The next message starts a new task.')).toBeOnTheScreen();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Another topic');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       expect(screen.getByRole('switch', { name: 'New task' })).not.toBeChecked();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Follow up');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       await waitFor(() => expect(posts()).toHaveLength(2));
       expect(posts().map((request) => request.body)).toEqual([
         { text: 'Another topic', newTask: true, model: 'openai/gpt-5' },
-        { text: 'Follow up', newTask: false, model: 'openai/gpt-5' },
+        { text: 'Follow up', newTask: true, model: 'openai/gpt-5' },
       ]);
     });
 
@@ -737,7 +748,7 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       await act(async () => jest.advanceTimersByTime(slowAfterMs - 1));
       expect(screen.getByText('Sending')).toBeOnTheScreen();
       await act(async () => jest.advanceTimersByTime(1));
@@ -750,7 +761,7 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       expect(await screen.findByText('Not sent')).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('button', { name: 'Send again' }));
       await waitFor(() => expect(posts()).toHaveLength(2));
@@ -775,7 +786,7 @@ describe('Live', () => {
       await show(<Chat />);
       const socket = await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       await waitFor(() => expect(posts()).toHaveLength(1));
       await act(async () => socket.receive({ type: 'resync', reason: 'too_old' }));
       expect(await screen.findByText('Received')).toBeOnTheScreen();
@@ -788,7 +799,7 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       expect(await screen.findByText('The server did not accept this message.')).toBeOnTheScreen();
       expect(screen.queryByRole('button', { name: 'Send again' })).toBeNull();
     });
@@ -799,7 +810,7 @@ describe('Live', () => {
       await connect();
       expect(screen.getByLabelText('Message')).toHaveProp('maxLength', 20_000);
       await fireEvent.changeText(screen.getByLabelText('Message'), 'x'.repeat(20_001));
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       expect(await screen.findByText('The server did not accept this message.')).toBeOnTheScreen();
       expect(screen.queryByRole('button', { name: 'Send again' })).toBeNull();
       expect(posts()).toHaveLength(0);
@@ -811,7 +822,7 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       expect(screen.getByLabelText('Plan. Sending')).toHaveProp('accessibilityLiveRegion', 'polite');
     });
 
@@ -823,7 +834,7 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       expect(await screen.findByText('Service not available. Trying again.')).toBeOnTheScreen();
       await act(async () => jest.advanceTimersByTime(1_000));
       expect(await screen.findByText('Sending')).toBeOnTheScreen();
@@ -836,6 +847,112 @@ describe('Live', () => {
       await show(<Chat />);
       await connect();
       expect(await screen.findByText(/^Kosten 2,50\s\$$/)).toBeOnTheScreen();
+    });
+  });
+
+  describe('Direct chat', () => {
+    const chatFetch = jest.mocked(streamFetch) as unknown as jest.Mock;
+    const sse = (event: object) => new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
+    const done = { type: 'done', finishReason: 'stop', inputTokens: 3, outputTokens: 2, costMicroUsd: 4200 };
+    let push = (_event: object) => {};
+    let end = () => {};
+
+    function openStream() {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          push = (event) => controller.enqueue(sse(event));
+          end = () => controller.close();
+        },
+      });
+      return { ok: true, status: 200, body };
+    }
+    const settle = () => act(async () => new Promise<void>((resolve) => setTimeout(resolve, notifyMs + 30)));
+
+    beforeEach(async () => {
+      direct.clear();
+      chatFetch.mockReset().mockImplementation(async () => openStream());
+      jest.mocked(auth.getAccessToken).mockResolvedValue('token-1');
+      await setItem('settings', { language: 'system', theme: 'system', model: 'openai/gpt-5', effort: null });
+      server.on(threadRoute, json(200, { items: [], headSeq: 10 }));
+    });
+
+    it('sends a message directly to the model, streams markdown, and offers stop, copy and regenerate', async () => {
+      const copy = jest.spyOn(Clipboard, 'setString').mockImplementation(() => {});
+      await show(<Chat />);
+      await connect();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Say hi');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      expect(screen.getByText('Say hi')).toBeOnTheScreen();
+      expect(screen.getByLabelText('Message')).toHaveProp('value', '');
+      await waitFor(() => expect(chatFetch).toHaveBeenCalledTimes(1));
+      const [url, init] = chatFetch.mock.calls[0] as [string, { body: string }];
+      expect(url).toBe('https://ai.famashines.com/api/chat');
+      const sent = JSON.parse(init.body) as { chatId: string; model: string; messages: unknown[] };
+      expect(sent).toEqual({ chatId: sent.chatId, model: 'openai/gpt-5', messages: [{ role: 'user', content: 'Say hi' }] });
+      expect(posts()).toHaveLength(0);
+      expect(screen.getByText('Writing')).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Stop the answer' })).toBeOnTheScreen();
+      expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+      await act(async () => push({ type: 'delta', text: 'Hi **the' }));
+      await act(async () => push({ type: 'delta', text: 're**' }));
+      await settle();
+      expect(screen.getByText('there')).toBeOnTheScreen();
+      expect(screen.queryByText('**', { exact: false })).toBeNull();
+      await act(async () => {
+        push(done);
+        end();
+      });
+      await settle();
+      expect(screen.queryByText('Writing')).toBeNull();
+      expect(screen.getByText('Cost $0.0042')).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Send' })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByTestId('copy-answer'));
+      expect(copy).toHaveBeenCalledWith('Hi **there**');
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Copy the message' })[0]!);
+      expect(copy).toHaveBeenCalledTimes(2);
+      await fireEvent.press(screen.getByRole('button', { name: 'Make the answer again' }));
+      await waitFor(() => expect(chatFetch).toHaveBeenCalledTimes(2));
+      expect((JSON.parse((chatFetch.mock.calls[1] as [string, { body: string }])[1].body) as { messages: unknown[] }).messages).toEqual([{ role: 'user', content: 'Say hi' }]);
+      await act(async () => {
+        push(done);
+        end();
+      });
+      await settle();
+    });
+
+    it('stop keeps the partial answer, and New chat clears the direct chat', async () => {
+      await show(<Chat />);
+      await connect();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Long story');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(chatFetch).toHaveBeenCalledTimes(1));
+      const { signal } = (chatFetch.mock.calls[0] as [string, { signal: AbortSignal }])[1];
+      await act(async () => push({ type: 'delta', text: 'Once' }));
+      await settle();
+      await fireEvent.press(screen.getByRole('button', { name: 'Stop the answer' }));
+      expect(signal.aborted).toBe(true);
+      await act(async () => end());
+      await settle();
+      expect(screen.getByText('Once')).toBeOnTheScreen();
+      expect(screen.getByText('Stopped')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
+      expect(screen.queryByText('Long story')).toBeNull();
+      expect(screen.getByText('No messages yet.')).toBeOnTheScreen();
+    });
+
+    it('shows the reason when the budget refuses the message', async () => {
+      await show(<Chat />);
+      await connect();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Costly');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(chatFetch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        push({ type: 'error', errorClass: 'budget_refused', reason: 'cap', costMicroUsd: 0 });
+        end();
+      });
+      await settle();
+      expect(screen.getByText('The budget does not allow this message.')).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Make the answer again' })).toBeOnTheScreen();
     });
   });
 
@@ -858,7 +975,7 @@ describe('Live', () => {
     };
     const sendText = async (text: string) => {
       await fireEvent.changeText(screen.getByLabelText('Message'), text);
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
     };
 
     beforeEach(() => {
@@ -874,7 +991,7 @@ describe('Live', () => {
       expect(labels(screen.getByTestId('composer'))).toEqual(['Message', 'New task', 'Choose model', 'Send']);
       const toggle = screen.getByRole('switch', { name: 'New task' });
       expect(toggle).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
-      expect(toggle).toHaveProp('accessibilityHint', 'When it is off, a message goes to the task that waits for your answer or runs now. Turn on New task to start a new task with the next message.');
+      expect(toggle).toHaveProp('accessibilityHint', 'When it is off, the message goes directly to the model. Turn on New task to give the next message to the agent team.');
       expect(screen.queryByText('New task')).toBeNull();
       const model = chip('Choose model');
       expect(model).toHaveProp('accessibilityHint', 'Opens the list of models and effort levels for the next new task.');
@@ -983,9 +1100,9 @@ describe('Live', () => {
       await fireEvent.press(chip('Choose model'));
       await fireEvent.press(screen.getByRole('radio', { name: 'OpenAI: GPT-5' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       await waitFor(() => expect(posts()).toHaveLength(1));
-      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: false, model: 'openai/gpt-5', effort: 'medium' });
+      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: true, model: 'openai/gpt-5', effort: 'medium' });
     });
 
     it('sends the saved model before the list loads, with no extra wait', async () => {
@@ -997,7 +1114,7 @@ describe('Live', () => {
       expect(chip('Model gpt-5, effort High')).toHaveTextContent('gpt-5High');
       await sendText('First');
       await waitFor(() => expect(posts()).toHaveLength(1));
-      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: false, model: 'openai/gpt-5', effort: 'high' });
+      expect(posts()[0]!.body).toEqual({ text: 'First', newTask: true, model: 'openai/gpt-5', effort: 'high' });
     });
 
     it('sends the model and effort with a message, again on a retry, and never with a reply taskId', async () => {
@@ -1021,8 +1138,8 @@ describe('Live', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Probe send' }));
       await waitFor(() => expect(posts()).toHaveLength(3));
       expect(posts().map((request) => request.body)).toEqual([
-        { text: 'Plan the week', newTask: false, model: 'openai/gpt-5', effort: 'high' },
-        { text: 'Plan the week', newTask: false, model: 'openai/gpt-5', effort: 'high' },
+        { text: 'Plan the week', newTask: true, model: 'openai/gpt-5', effort: 'high' },
+        { text: 'Plan the week', newTask: true, model: 'openai/gpt-5', effort: 'high' },
         { text: 'Use English only.', newTask: false, taskId: ids.taskA },
       ]);
     });
@@ -1047,7 +1164,7 @@ describe('Live', () => {
       expect(await screen.findByRole('button', { name: 'Model OpenAI: GPT-4.1 Nano' })).toHaveTextContent('GPT-4.1 Nano');
       await sendText('Short answer');
       await waitFor(() => expect(posts()).toHaveLength(1));
-      expect(posts()[0]!.body).toEqual({ text: 'Short answer', newTask: false, model: 'openai/gpt-4.1-nano' });
+      expect(posts()[0]!.body).toEqual({ text: 'Short answer', newTask: true, model: 'openai/gpt-4.1-nano' });
     });
 
     it('closes the picker when the handle is dragged down or tapped, and springs back after a short drag', async () => {
@@ -1465,7 +1582,7 @@ describe('Live', () => {
       expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
       await fireEvent.press(screen.getAllByRole('button', { name: 'Reply to this task' })[0]!);
       await fireEvent.changeText(screen.getByLabelText('Message'), 'Use English only.');
-      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await sendToTeam();
       await waitFor(() => expect(posts()).toHaveLength(1));
       expect(posts()[0]!.body).toEqual({ text: 'Use English only.', newTask: false, taskId: ids.taskA });
       expect(screen.queryByText('Your next message goes to the task: Plan the week')).toBeNull();
