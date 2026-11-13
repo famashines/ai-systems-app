@@ -120,6 +120,59 @@ export async function chatTitle(chatId: string, messages: { role: 'user' | 'assi
   return (await request('/api/chat/title', init, ChatTitleReply, titleTimeoutMs)).title;
 }
 
+const ChatItem = z.object({
+  chatId: z.string(),
+  title: z.string().optional(),
+  titled: z.enum(['model', 'owner']).optional(),
+  bookmarked: z.boolean(),
+  updatedAt: z.iso.datetime(),
+});
+export type ServerChat = z.infer<typeof ChatItem>;
+
+const MessageItem = z.object({
+  seq: z.int().min(0),
+  role: z.enum(['user', 'assistant']),
+  text: z.string(),
+  state: z.enum(['done', 'stopped']).optional(),
+  costMicroUsd: z.int().nonnegative().optional(),
+  createdAt: z.iso.datetime(),
+});
+export type ServerMessage = z.infer<typeof MessageItem>;
+
+export const chatListMax = 50;
+export const chatMessagesMax = 400;
+
+export async function listChats(): Promise<ServerChat[]> {
+  return (await request(`/api/chats?limit=${chatListMax}`, { method: 'GET' }, z.object({ items: z.array(ChatItem) }))).items;
+}
+
+export async function chatMessages(chatId: string): Promise<ServerMessage[]> {
+  const Page = z.object({ items: z.array(MessageItem), more: z.boolean() });
+  const all: ServerMessage[] = [];
+  for (;;) {
+    const after = all.at(-1)?.seq;
+    const page = await request(`/api/chats/${encodeURIComponent(chatId)}/messages${after === undefined ? '' : `?afterSeq=${after}`}`, { method: 'GET' }, Page);
+    all.push(...page.items);
+    if (!page.more || page.items.length === 0 || all.length >= chatMessagesMax) return all;
+  }
+}
+
+async function gone(path: string, init: RequestInit): Promise<void> {
+  try {
+    await request(path, init, z.unknown());
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+  }
+}
+
+export function changeChat(chatId: string, change: { title?: string; bookmarked?: boolean }): Promise<void> {
+  return gone(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change) });
+}
+
+export function deleteChat(chatId: string): Promise<void> {
+  return gone(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+}
+
 export async function getBudget(): Promise<BudgetMonthV1 | null> {
   try {
     return await request('/api/budget', { method: 'GET' }, BudgetMonthV1);

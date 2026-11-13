@@ -1,4 +1,4 @@
-import { ApiError, chatTitle, getBudget, listModels, setBudget } from '@/lib/api';
+import { ApiError, changeChat, chatMessages, chatTitle, deleteChat, getBudget, listChats, listModels, setBudget } from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { fakeServer, json } from '@/test-fakes';
 
@@ -160,5 +160,39 @@ describe('chat title', () => {
     await expect(chatTitle('chat-1', messages)).rejects.toMatchObject({ kind: 'unavailable' });
     await expect(chatTitle('chat-1', messages)).rejects.toMatchObject({ kind: 'unavailable' });
     expect(server.requests).toHaveLength(2);
+  });
+});
+
+describe('chat history', () => {
+  const at = '2026-11-14T10:00:00.000Z';
+  const message = (seq: number) => ({ seq, role: seq % 2 === 0 ? 'user' : 'assistant', text: `m${seq}`, createdAt: at });
+
+  it('lists the newest chats with the bearer token', async () => {
+    server.on('GET /api/chats', json(200, { items: [{ chatId: 'c1', bookmarked: true, createdAt: at, updatedAt: at }] }));
+    expect(await listChats()).toEqual([{ chatId: 'c1', bookmarked: true, updatedAt: at }]);
+    expect(server.requests[0]!.query.get('limit')).toBe('50');
+    expect(server.requests[0]!.headers.get('Authorization')).toBe('Bearer access-1');
+  });
+
+  it('reads all pages of a chat after the last seq', async () => {
+    server.on('GET /api/chats/c1/messages', json(200, { items: [message(0), message(1)], more: true }), json(200, { items: [message(2)], more: false }));
+    expect((await chatMessages('c1')).map((item) => item.seq)).toEqual([0, 1, 2]);
+    expect(server.requests.map((request) => request.query.get('afterSeq'))).toEqual([null, '1']);
+  });
+
+  it('fails on a bad answer', async () => {
+    server.on('GET /api/chats/c1/messages', json(200, { items: [{ ...message(0), role: 'system' }], more: false }));
+    await expect(chatMessages('c1')).rejects.toMatchObject({ kind: 'unavailable' });
+  });
+
+  it('changes and deletes a chat, and takes 404 as done', async () => {
+    const empty = () => new Response(null, { status: 204 });
+    server.on('PATCH /api/chats/c1', empty());
+    server.on('DELETE /api/chats/c1', empty(), problem(404, 'not_found'), problem(503, 'unavailable'));
+    await changeChat('c1', { title: 'Trip' });
+    expect(server.requests[0]!.body).toEqual({ title: 'Trip' });
+    await deleteChat('c1');
+    await deleteChat('c1');
+    await expect(deleteChat('c1')).rejects.toBeInstanceOf(ApiError);
   });
 });
