@@ -49,6 +49,13 @@ release scripts (docs/release.md, section 4).
 | -------- | ------- | --- |
 | `EXPO_PUBLIC_OIDC_ISSUER` | `https://auth.famashines.com/realms/ai-systems` | Keycloak issuer for the login |
 | `EXPO_PUBLIC_API_URL` | `https://ai.famashines.com` | gateway origin for `/api` |
+| `EXPO_PUBLIC_LOGIN` | `on` | `off` turns the login off, for internal testing only |
+
+With `EXPO_PUBLIC_LOGIN=off` the app shows no login, no lock screen and no
+Sign out. It sends the fixed bearer value `no-login`. This works only when
+api-gateway and ai-proxy have `OWNER_WITHOUT_LOGIN` set. Setting the monthly
+cap still needs a login, so the cap cannot change while the login is off.
+Do not ship a production release with the login off.
 
 The client id is `ai-systems-app`. The redirect URI is
 `com.famashines.ai:/oauth2redirect`, a private-use scheme in reverse-domain

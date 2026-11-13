@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Menu } from '@/components/drawer';
 import { AppText, Button, Card, Screen, StateView } from '@/components/ui';
 import { languages, type Key } from '@/i18n';
+import { config } from '@/lib/config';
 import { useSession } from '@/state/session';
 import { useSettings, type LanguageChoice, type ThemeChoice } from '@/state/settings';
 import { radius, spacing, touchTarget } from '@/theme';
@@ -83,7 +84,7 @@ export default function Settings() {
           </AppText>
         </View>
         {state === 'failed' ? <StateView kind="error" title={t('common.error')} retryLabel={t('common.retry')} onRetry={() => void leave()} /> : null}
-        <Button label={t('settings.signOut')} variant="outline" busy={state === 'busy'} onPress={() => void leave()} />
+        {config.loginOff ? null : <Button label={t('settings.signOut')} variant="outline" busy={state === 'busy'} onPress={() => void leave()} />}
       </ScrollView>
     </Screen>
   );

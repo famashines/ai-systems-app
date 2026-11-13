@@ -130,6 +130,18 @@ it('uses the Expo Go address as the redirect inside Expo Go, for the browser and
   jest.dontMock('expo-linking');
 });
 
+it('gives a fixed token and needs no login when EXPO_PUBLIC_LOGIN is off', async () => {
+  process.env.EXPO_PUBLIC_LOGIN = 'off';
+  jest.isolateModules(() => {
+    auth = require('@/lib/auth');
+  });
+  delete process.env.EXPO_PUBLIC_LOGIN;
+  expect(await auth.restore()).toBe(true);
+  expect(await auth.refresh()).toBe(true);
+  expect(await auth.getAccessToken()).toBe(auth.noLoginToken);
+  expect(calls).toEqual([]);
+});
+
 it('returns false when the person cancels the browser', async () => {
   reply(`${issuer}/.well-known/openid-configuration`, discoveryDoc);
   jest.mocked(openAuthSessionAsync).mockResolvedValue({ type: 'cancel' } as Awaited<ReturnType<typeof openAuthSessionAsync>>);

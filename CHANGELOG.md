@@ -13,6 +13,11 @@
 - 155 text keys that only the task screens used, the task flows of
   Maestro, and the Tasks store screenshot.
 
+### Added
+
+- `EXPO_PUBLIC_LOGIN=off` turns the login off for internal testing: no
+  login screen, no lock screen and no Sign out.
+
 ### Fixed
 
 - In Expo Go, the login returns to Expo Go. Before, Android gave the login
