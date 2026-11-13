@@ -22,6 +22,8 @@
   `@expo-google-fonts/literata` 0.4.3 (font files only, four faces).
 - An empty chat shows only the message field: no mark, no question and no
   starter lines.
+- After a copy, the copy icon changes to a green check for 2 seconds. New
+  colour token `success`.
 - The header shows the title of the chat (its first message).
 - One pulsing dot shows while the first text of an answer has not come.
 - The composer has the model chip at the start and Send at the end.

@@ -29,11 +29,12 @@ type IconButtonProps = {
   onPress: () => void;
   disabled?: boolean;
   filled?: boolean;
+  color?: keyof Colors;
   testID?: string;
   accessibilityHint?: string;
 };
 
-export function IconButton({ icon, label, onPress, disabled = false, filled = false, testID, accessibilityHint }: IconButtonProps) {
+export function IconButton({ icon, label, onPress, disabled = false, filled = false, color = 'onSurface', testID, accessibilityHint }: IconButtonProps) {
   const { colors } = useSettings();
   return (
     <Pressable
@@ -47,7 +48,7 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
       android_ripple={{ color: colors.outlineVariant, borderless: !filled }}
       style={({ pressed }) => [styles.iconButton, { backgroundColor: filled ? colors.primary : 'transparent', opacity: disabled ? 0.38 : pressed ? 0.7 : 1 }]}
     >
-      <Icon name={icon} color={filled ? 'onPrimary' : 'onSurface'} size={filled ? 22 : 24} />
+      <Icon name={icon} color={filled ? 'onPrimary' : color} size={filled ? 22 : 24} />
     </Pressable>
   );
 }

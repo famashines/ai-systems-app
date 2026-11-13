@@ -191,8 +191,9 @@ app                                           api-gateway --> ai-proxy --> OpenR
   are JS assets, so they come with an EAS Update. Until they load, and for
   scripts that Literata does not have (Urdu), Android uses the system
   font.
-- Colours are the brand tokens of `logo-master/SPEC.md`, with no new
-  colour. Your message uses `primaryContainer`.
+- Colours are the brand tokens of `logo-master/SPEC.md`, plus one green
+  (`success`) for the check that shows after a copy. Your message uses
+  `primaryContainer`.
 - An empty chat shows only the message field.
 - While the first text of an answer has not come, one blue dot pulses.
   With "Remove animations" on in Android, the dot does not move.
