@@ -90,7 +90,7 @@ function Code({ token }: { token: Tokens.Code }) {
         <CopyButton text={token.text} label={t('chat.copyCode')} />
       </View>
       <ScrollView horizontal contentContainerStyle={styles.codeBody}>
-        <Text selectable style={[type.code, { color: colors.onSurface }]}>
+        <Text selectable style={[type.code, styles.codeText, { color: colors.onSurface }]}>
           {token.text}
         </Text>
       </ScrollView>
@@ -189,7 +189,8 @@ const styles = StyleSheet.create({
   em: { fontStyle: 'italic' },
   del: { textDecorationLine: 'line-through' },
   link: { textDecorationLine: 'underline' },
-  code: { borderRadius: radius.md, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
+  code: { direction: 'ltr', borderRadius: radius.md, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
+  codeText: { textAlign: 'left', writingDirection: 'ltr' },
   codeHead: { flexDirection: 'row', alignItems: 'center', paddingStart: spacing.md },
   codeBody: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
   quote: { borderStartWidth: spacing.xs, paddingStart: spacing.md, gap: spacing.sm },
