@@ -23,7 +23,6 @@ const routes = {
   _layout: RootLayout,
   '(tabs)/_layout': SectionsLayout,
   '(tabs)/index': () => <Text>chat content</Text>,
-  '(tabs)/tasks': () => <Text>tasks content</Text>,
   '(tabs)/budget': () => <Text>budget content</Text>,
   '(tabs)/settings': () => <Text>settings content</Text>,
   login: () => <Text>login content</Text>,
@@ -63,7 +62,7 @@ it('covers the content with the lock and hides it from accessibility', async () 
   expect(node).not.toBeNull();
 });
 
-it('keeps "Your session ended" on the login screen when the live connection loses the token', async () => {
+it('shows "Your session ended" on the login screen when a token read ends the session', async () => {
   jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
   jest.mocked(auth.getAccessToken).mockImplementationOnce(async () => {
     jest.mocked(auth.onSessionEnded).mock.calls.at(-1)![0]();
@@ -72,7 +71,6 @@ it('keeps "Your session ended" on the login screen when the live connection lose
   jest.mocked(auth.restore).mockResolvedValue(true);
   await renderRouter({ ...routes, login: Login }, { initialUrl: '/' });
   expect(await screen.findByRole('alert')).toHaveTextContent('Your session ended. Sign in again.');
-  expect(auth.signOut).toHaveBeenCalledTimes(1);
 });
 
 it('shows each section route with no tab bar', async () => {

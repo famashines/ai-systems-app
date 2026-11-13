@@ -7,7 +7,6 @@ export default function SectionsLayout() {
   return (
     <Tabs tabBar={() => null} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.surface } }}>
       <Tabs.Screen name="index" />
-      <Tabs.Screen name="tasks" />
       <Tabs.Screen name="budget" />
       <Tabs.Screen name="settings" />
     </Tabs>

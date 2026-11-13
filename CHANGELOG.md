@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Removed (tasks)
+
+- All task functions (docs ADR 0035): the Tasks screen, the task detail
+  screen, plans and plan editing, owner controls, checkpoints, the New
+  task switch, replies to a task, the task thread in the chat, the recent
+  tasks in the side menu, and the task cache on the phone.
+- The WebSocket connection, the connection bar and `EXPO_PUBLIC_WS_URL`.
+  The app uses HTTP only.
+- 155 text keys that only the task screens used, the task flows of
+  Maestro, and the Tasks store screenshot.
+
+### Changed (chat only, new design)
+
+- The app is a chat with a model. The side menu has New chat, the list of
+  chats, and Budget and Settings at the bottom.
+- Answers are set in Literata, a reading serif, with no bubble. Your
+  messages are in a blue tint bubble. New dependency
+  `@expo-google-fonts/literata` 0.4.3 (font files only, four faces).
+- An empty chat shows the mark, "What do you want to know?" and three
+  starter lines that fill the message field.
+- The header shows the title of the chat (its first message).
+- One pulsing dot shows while the first text of an answer has not come.
+- The composer has the model chip at the start and Send at the end.
+- The model list and the budget load after sign-in. The budget loads again
+  after each answer.
+
 ### Added (chat history)
 
 - Direct chats are kept on the phone, at most the newest 50. The side menu

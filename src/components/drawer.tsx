@@ -1,4 +1,4 @@
-import { router, type Href } from 'expo-router';
+import { router } from 'expo-router';
 import { useState, useSyncExternalStore } from 'react';
 import { Animated, I18nManager, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,25 +6,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Icon, IconButton, Mark, type IconName } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { direct } from '@/lib/direct';
-import { useLive } from '@/state/live';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
-import { drawerWidth, motion, radius, spacing, touchTarget } from '@/theme';
+import { drawerWidth, mark, motion, radius, spacing, touchTarget } from '@/theme';
 
-export type Section = '/' | '/tasks' | '/budget' | '/settings';
+export type Section = '/' | '/budget' | '/settings';
 
-const sections: [Section, Key, IconName][] = [
-  ['/', 'tabs.chat', { ios: 'bubble.left', android: 'chat_bubble', web: 'chat_bubble' }],
-  ['/tasks', 'tabs.tasks', { ios: 'checklist', android: 'checklist', web: 'checklist' }],
+const sections: [Exclude<Section, '/'>, Key, IconName][] = [
   ['/budget', 'tabs.budget', { ios: 'dollarsign.circle', android: 'savings', web: 'savings' }],
   ['/settings', 'tabs.settings', { ios: 'gearshape', android: 'settings', web: 'settings' }],
 ];
 
-const recentMax = 10;
-
 export function Menu({ current }: { current: Section }) {
   const { t, colors } = useSettings();
-  const { tasks, online, snapshot } = useLive();
   const { locked } = useSession();
   const chat = useSyncExternalStore(direct.subscribe, direct.get);
   const [open, setOpen] = useState(false);
@@ -38,10 +32,9 @@ export function Menu({ current }: { current: Section }) {
     Animated.timing(progress, { toValue: 1, duration: motion.open, useNativeDriver: true }).start();
   };
   const close = () => setOpen(false);
-  const go = (href: Href, push = false) => {
+  const go = (href: Section) => {
     close();
-    if (push) router.push(href);
-    else router.navigate(href);
+    router.navigate(href);
   };
 
   return (
@@ -60,46 +53,43 @@ export function Menu({ current }: { current: Section }) {
         >
           <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.fill}>
             <View style={styles.top}>
-              <Mark size={40} />
-              <AppText variant="title" color="primary" accessibilityRole="header" style={styles.name}>
+              <Mark size={mark.small} />
+              <AppText variant="title" accessibilityRole="header" style={styles.name}>
                 {t('app.name')}
               </AppText>
               <IconButton icon={{ ios: 'xmark', android: 'close', web: 'close' }} label={t('drawer.close')} onPress={close} />
             </View>
-            <ScrollView contentContainerStyle={styles.list}>
-              {sections.map(([href, key, icon]) => {
-                const selected = href === current;
-                return (
-                  <Pressable
-                    key={href}
-                    testID={`drawer-${href}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={t(key)}
-                    accessibilityState={{ selected }}
-                    onPress={() => go(href)}
-                    android_ripple={{ color: colors.outlineVariant }}
-                    style={[styles.row, { backgroundColor: selected ? colors.primaryContainer : 'transparent' }]}
-                  >
-                    <Icon name={icon} color={selected ? 'onPrimaryContainer' : 'onSurfaceVariant'} />
-                    <AppText variant="label" color={selected ? 'onPrimaryContainer' : 'onSurface'}>
-                      {t(key)}
-                    </AppText>
-                  </Pressable>
-                );
-              })}
-              <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
-              <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
-                {t('drawer.chats')}
-              </AppText>
+            <View style={styles.block}>
+              <Pressable
+                testID="drawer-new-chat"
+                accessibilityRole="button"
+                accessibilityLabel={t('chat.newChat')}
+                onPress={() => {
+                  direct.clear();
+                  go('/');
+                }}
+                android_ripple={{ color: colors.outlineVariant }}
+                style={[styles.row, { backgroundColor: colors.primaryContainer }]}
+              >
+                <Icon name={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} color="onPrimaryContainer" />
+                <AppText variant="label" color="onPrimaryContainer">
+                  {t('chat.newChat')}
+                </AppText>
+              </Pressable>
+            </View>
+            <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
+              {t('drawer.chats')}
+            </AppText>
+            <ScrollView style={styles.fill} contentContainerStyle={styles.block}>
               {chat.history.length === 0 ? (
-                <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.heading}>
+                <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.none}>
                   {t('drawer.noChats')}
                 </AppText>
               ) : (
                 chat.history.map((item) => {
-                  const selected = item.chatId === chat.chatId;
+                  const selected = current === '/' && item.chatId === chat.chatId;
                   return (
-                    <View key={item.chatId} style={[styles.chat, { backgroundColor: selected ? colors.primaryContainer : 'transparent' }]}>
+                    <View key={item.chatId} style={[styles.chat, { backgroundColor: selected ? colors.surfaceContainerHigh : 'transparent' }]}>
                       <Pressable
                         testID={`drawer-chat-${item.chatId}`}
                         accessibilityRole="button"
@@ -112,9 +102,7 @@ export function Menu({ current }: { current: Section }) {
                         android_ripple={{ color: colors.outlineVariant }}
                         style={styles.chatTitle}
                       >
-                        <AppText numberOfLines={1} color={selected ? 'onPrimaryContainer' : 'onSurface'}>
-                          {item.title}
-                        </AppText>
+                        <AppText numberOfLines={1}>{item.title}</AppText>
                       </Pressable>
                       <IconButton
                         testID={`drawer-chat-delete-${item.chatId}`}
@@ -126,39 +114,27 @@ export function Menu({ current }: { current: Section }) {
                   );
                 })
               )}
-              <View style={[styles.divider, { backgroundColor: colors.outlineVariant }]} />
-              <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
-                {t('drawer.recent')}
-              </AppText>
-              {tasks.length === 0 ? (
-                online && snapshot === 'idle' ? (
-                  <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.heading}>
-                    {t('tasks.empty')}
-                  </AppText>
-                ) : null
-              ) : (
-                tasks.slice(0, recentMax).map((task) => {
-                  const status = t(`taskStatus.${task.status}`);
-                  return (
-                    <Pressable
-                      key={task.taskId}
-                      testID={`drawer-task-${task.taskId}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('drawer.task', { title: task.title, status })}
-                      accessibilityHint={t('tasks.open')}
-                      onPress={() => go({ pathname: '/task/[id]', params: { id: task.taskId } }, true)}
-                      android_ripple={{ color: colors.outlineVariant }}
-                      style={styles.task}
-                    >
-                      <AppText numberOfLines={1}>{task.title}</AppText>
-                      <AppText variant="bodySmall" color="onSurfaceVariant">
-                        {status}
-                      </AppText>
-                    </Pressable>
-                  );
-                })
-              )}
             </ScrollView>
+            <View style={[styles.block, styles.foot, { borderColor: colors.outlineVariant }]}>
+              {sections.map(([href, key, icon]) => {
+                const selected = href === current;
+                return (
+                  <Pressable
+                    key={href}
+                    testID={`drawer-${href}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(key)}
+                    accessibilityState={{ selected }}
+                    onPress={() => go(href)}
+                    android_ripple={{ color: colors.outlineVariant }}
+                    style={[styles.row, { backgroundColor: selected ? colors.surfaceContainerHigh : 'transparent' }]}
+                  >
+                    <Icon name={icon} color="onSurfaceVariant" />
+                    <AppText variant="label">{t(key)}</AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
           </SafeAreaView>
         </Animated.View>
       </Modal>
@@ -169,13 +145,13 @@ export function Menu({ current }: { current: Section }) {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   panel: { position: 'absolute', top: 0, bottom: 0, start: 0, width: drawerWidth, maxWidth: '85%', borderTopEndRadius: radius.lg, borderBottomEndRadius: radius.lg, overflow: 'hidden' },
-  top: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, minHeight: 56, paddingStart: spacing.sm, paddingEnd: spacing.xs },
-  name: { flex: 1, fontWeight: '500' },
-  list: { paddingHorizontal: spacing.sm, paddingBottom: spacing.lg, gap: spacing.xs },
+  top: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 56, paddingStart: spacing.md, paddingEnd: spacing.xs },
+  name: { flex: 1 },
+  block: { paddingHorizontal: spacing.sm, gap: spacing.xs },
+  foot: { paddingVertical: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth * 2 },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget, paddingHorizontal: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
-  divider: { height: StyleSheet.hairlineWidth, marginVertical: spacing.sm, marginHorizontal: spacing.md },
-  heading: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  heading: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xs },
+  none: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   chat: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   chatTitle: { flex: 1, justifyContent: 'center', minHeight: touchTarget, paddingHorizontal: spacing.md },
-  task: { justifyContent: 'center', minHeight: touchTarget + spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.md, overflow: 'hidden' },
 });

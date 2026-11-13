@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Button } from '@/components/ui';
 import type { Key } from '@/i18n';
 import type { Choice as ModelChoice } from '@/lib/api';
-import { useLive } from '@/state/live';
+import { useData } from '@/state/data';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { motion, radius, rail, readingWidth, spacing, touchTarget, type } from '@/theme';
@@ -54,7 +54,7 @@ export function shortName(name: string): string {
 
 export function useChoice(): ModelChoice {
   const { settings } = useSettings();
-  const { models } = useLive();
+  const { models } = useData();
   return choiceOf(models.items, models.loaded, settings.model, settings.effort).choice;
 }
 
@@ -113,7 +113,7 @@ function EffortRail({ efforts, selected, onPick }: { efforts: ReasoningEffort[];
 
 export function ModelPicker({ disabled }: { disabled: boolean }) {
   const { t, colors, settings, update } = useSettings();
-  const { models, reloadModels } = useLive();
+  const { models, reloadModels } = useData();
   const { locked } = useSession();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -131,7 +131,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
     setQuery('');
     drag.offset.setValue(0);
     setOpen(true);
-    if (models.load === 'error' || (models.load === 'idle' && models.items.length === 0)) reloadModels();
+    if (models.load === 'error') reloadModels();
   };
   const close = () => setOpen(false);
   const pick = (next: ModelListItemV1) => {

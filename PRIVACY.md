@@ -1,10 +1,10 @@
 # Privacy policy: Fama AI
 
-Last change: 2026-11-08.
+Last change: 2026-11-13.
 
 Fama AI (package `com.famashines.ai`) is the Android app of the
-famashines ai-systems service. You use it to send tasks to your own AI
-agents, follow the tasks, and see the cost. This policy tells you which
+famashines ai-systems service. You use it to chat with an AI model and to
+see the cost. This policy tells you which
 data the app keeps on your device, which data it sends, and where the data
 goes.
 
@@ -15,15 +15,13 @@ goes.
 | Refresh token of your login | Android secure storage (`expo-secure-store`, encrypted with the Android Keystore) | At sign-out, or when the server ends the session |
 | Access token of your login | App memory only | When the app stops, or at sign-out |
 | Settings: language and theme | Local SQLite database `cache.db` | When you remove the app or clear its data |
-| Recent task list: task id, title, status and times, at most 200 tasks | Local SQLite database `cache.db` | At sign-out |
 | Direct chats: your messages and the answers of the model, at most 50 chats | Local SQLite database `cache.db` | When you delete the chat in the menu, when it is older than the newest 50 chats, at sign-out, or when you remove the app or clear its data |
 | Update client id: a random id that the app makes for this install | Android app storage (`dev.expo.EASSharedPreferences`) | When you remove the app or clear its data |
 | App updates: the app code and images of the last update | Android app storage | When a newer update comes, when you remove the app, or when you clear its data |
 
-The task thread, the conversation id and the budget are not kept on the
-device. The app gets them from the server each time. Each start of the app
-opens a new conversation. Direct chats are kept on the device only (table
-above); the server does not store them.
+The budget and the model list are not kept on the device. The app gets
+them from the server each time. Direct chats are kept on the device only
+(table above); the server does not store them.
 
 The app lock uses the Android biometric prompt or your device PIN. Android
 does the check. The app gets only "unlocked" or "not unlocked". It does not
@@ -34,13 +32,14 @@ above does not go to a Google backup.
 
 ## Data that the app sends
 
-The app connects only to these servers, and only with https and wss:
+The app connects only to these servers, and only with https:
 
 - `auth.famashines.com`: the login (Keycloak, OpenID Connect with PKCE).
   Your account name and password go to this server, not to the app.
-- `ai.famashines.com`: the ai-systems server. The app sends the chat text
-  that you write, your task commands, and your budget settings. The server
-  sends back the tasks, the replies of the agents, and the cost.
+- `ai.famashines.com`: the ai-systems server. The app sends the chat (your
+  messages and the answers before them, for the next answer), the model
+  that you choose, and your budget settings. The server sends back the
+  answer of the model, the model list, and the cost.
 - `u.expo.dev` and the Expo file servers: EAS Update by Expo, the update
   service of the app. At each start, the app asks for a new version of its
   code. The request has the platform (android), the app version, the update
@@ -67,7 +66,7 @@ agree to these rules get the text.
 ## Your choices
 
 - Sign out in Settings or on the lock screen. This deletes the tokens and
-  the recent task list on the device.
+  the chats on the device.
 - Remove the app, or clear its data in Android Settings, to delete all
   data on the device.
 - To delete the data on the server, or for each other question, write to
