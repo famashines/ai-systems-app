@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   quote: { borderStartWidth: spacing.xs, paddingStart: spacing.md, gap: spacing.sm },
   item: { flexDirection: 'row', gap: spacing.sm },
   rule: { height: StyleSheet.hairlineWidth * 2 },
-  table: { borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.sm },
+  table: { borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.md },
   tableRow: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
   cell: { width: tableCell, padding: spacing.sm },
 });

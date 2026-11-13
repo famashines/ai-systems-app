@@ -144,7 +144,7 @@ export function Menu({ current }: { current: Section }) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  panel: { position: 'absolute', top: 0, bottom: 0, start: 0, width: drawerWidth, maxWidth: '85%', borderTopEndRadius: radius.lg, borderBottomEndRadius: radius.lg, overflow: 'hidden' },
+  panel: { position: 'absolute', top: 0, bottom: 0, start: 0, width: drawerWidth, maxWidth: '85%', borderTopEndRadius: radius.md, borderBottomEndRadius: radius.md, overflow: 'hidden' },
   top: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 56, paddingStart: spacing.md, paddingEnd: spacing.xs },
   name: { flex: 1 },
   block: { paddingHorizontal: spacing.sm, gap: spacing.xs },
