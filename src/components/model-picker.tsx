@@ -152,7 +152,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
         android_ripple={{ color: colors.outlineVariant }}
         style={[styles.chip, { backgroundColor: fullName ? colors.surfaceContainerHigh : colors.primaryContainer, opacity: disabled ? 0.38 : 1 }]}
       >
-        <AppText variant="label" color={fullName ? 'onSurface' : 'onPrimaryContainer'} numberOfLines={fullName ? 1 : 2} style={styles.chipText}>
+        <AppText variant="label" color={fullName ? 'onSurface' : 'onPrimaryContainer'} numberOfLines={1} style={styles.chipText}>
           {fullName ? shortName(fullName) : t('chat.modelChoose')}
         </AppText>
         {effortText ? (
@@ -237,19 +237,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.md,
-    borderTopStartRadius: radius.xl,
-    borderTopEndRadius: radius.xl,
+    borderTopStartRadius: radius.md,
+    borderTopEndRadius: radius.md,
     borderCurve: 'continuous',
     overflow: 'hidden',
   },
   handle: { height: touchTarget, alignItems: 'center', justifyContent: 'center' },
   pill: { width: 36, height: rail.edge, borderRadius: radius.full },
-  chip: { minHeight: touchTarget, minWidth: touchTarget, maxWidth: 160, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.full, overflow: 'hidden' },
-  search: { minHeight: touchTarget, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.full, textAlign: 'auto' },
+  chip: { minHeight: touchTarget, minWidth: touchTarget, flexShrink: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
+  search: { minHeight: touchTarget, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.field, borderCurve: 'continuous', textAlign: 'auto' },
   row: { minHeight: touchTarget + spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 10, height: 10, borderRadius: radius.full },
-  chipText: { textAlign: 'center' },
+  chipText: { flexShrink: 1 },
   rail: { flexGrow: 1 },
   step: { flex: 1, minWidth: touchTarget, minHeight: touchTarget + spacing.md, gap: spacing.xs, paddingVertical: spacing.sm, alignItems: 'stretch', overflow: 'hidden' },
   track: { flexDirection: 'row', alignItems: 'center', height: rail.nodeOn },

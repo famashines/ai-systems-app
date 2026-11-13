@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentRef } from 'react';
-import { AccessibilityInfo, Animated, FlatList, I18nManager, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Animated, FlatList, I18nManager, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { Menu } from '@/components/drawer';
 import { CopyButton, Markdown } from '@/components/markdown';
@@ -116,8 +116,9 @@ function Message({ message, last }: { message: DirectMessage; last: boolean }) {
 
 function Empty({ onPick }: { onPick: (text: string) => void }) {
   const { t, colors } = useSettings();
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   return (
-    <View style={styles.empty}>
+    <ScrollView ref={scroll} onLayout={() => scroll.current?.scrollToEnd({ animated: false })} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.empty}>
       <Mark size={mark.empty} />
       <AppText variant="greeting" accessibilityRole="header">
         {t('chat.greeting')}
@@ -140,7 +141,7 @@ function Empty({ onPick }: { onPick: (text: string) => void }) {
           </Pressable>
         ))}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -249,17 +250,17 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { gap: spacing.lg, paddingVertical: spacing.md },
   mine: { alignItems: 'flex-end' },
-  bubble: { maxWidth: '85%', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.xl, borderBottomEndRadius: radius.sm, borderCurve: 'continuous' },
+  bubble: { maxWidth: '85%', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.md, borderCurve: 'continuous' },
   answer: { gap: spacing.sm, alignSelf: 'stretch' },
   actions: { flexDirection: 'row', alignItems: 'center', marginStart: -spacing.sm - spacing.xs },
   cost: { marginStart: spacing.sm },
   thinking: { height: touchTarget / 2, justifyContent: 'center' },
   dot: { width: mark.thinking, height: mark.thinking, borderRadius: radius.full },
-  empty: { flex: 1, justifyContent: 'flex-end', gap: spacing.lg, paddingBottom: spacing.lg },
+  empty: { flexGrow: 1, justifyContent: 'flex-end', gap: spacing.lg, paddingBottom: spacing.lg },
   starter: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget + spacing.sm, borderTopWidth: StyleSheet.hairlineWidth * 2 },
   latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },
   composer: { gap: spacing.sm, paddingBottom: spacing.sm },
-  bar: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.xl, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },
+  bar: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.field, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },
   tools: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   input: { minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.sm, paddingVertical: (touchTarget - type.body.lineHeight) / 2, textAlign: 'auto', textAlignVertical: 'top' },
 });
