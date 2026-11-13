@@ -104,10 +104,5 @@
   "drawer.chats": "Chats",
   "drawer.noChats": "No chats yet.",
   "drawer.chat": "Chat: {title}",
-  "drawer.chatDelete": "Delete the chat {title}",
-  "chat.greeting": "What do you want to know?",
-  "chat.starter1": "Explain a difficult idea in simple words",
-  "chat.starter2": "Write a clear email for me",
-  "chat.starter3": "Help me plan my week",
-  "chat.starterHint": "Puts this text in the message field."
+  "drawer.chatDelete": "Delete the chat {title}"
 }

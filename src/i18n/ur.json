@@ -104,10 +104,5 @@
   "drawer.chats": "چیٹس",
   "drawer.noChats": "ابھی کوئی چیٹ نہیں۔",
   "drawer.chat": "چیٹ: {title}",
-  "drawer.chatDelete": "چیٹ {title} حذف کریں",
-  "chat.greeting": "آپ کیا جاننا چاہتے ہیں؟",
-  "chat.starter1": "ایک مشکل خیال آسان الفاظ میں سمجھائیں",
-  "chat.starter2": "میرے لیے ایک واضح ای میل لکھیں",
-  "chat.starter3": "میرا ہفتہ پلان کرنے میں مدد کریں",
-  "chat.starterHint": "یہ متن پیغام کے خانے میں ڈالتا ہے۔"
+  "drawer.chatDelete": "چیٹ {title} حذف کریں"
 }

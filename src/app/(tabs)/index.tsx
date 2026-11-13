@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentRef } from 'react';
-import { AccessibilityInfo, Animated, FlatList, I18nManager, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Animated, FlatList, StyleSheet, TextInput, View } from 'react-native';
 
 import { Menu } from '@/components/drawer';
 import { CopyButton, Markdown } from '@/components/markdown';
 import { ModelPicker, useChoice } from '@/components/model-picker';
-import { AppText, Icon, IconButton, Mark, Screen } from '@/components/ui';
+import { AppText, IconButton, Screen } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { messageTextMax } from '@/lib/api';
 import { direct, type DirectError, type DirectMessage } from '@/lib/direct';
@@ -13,7 +13,6 @@ import { useSettings } from '@/state/settings';
 import { mark, motion, radius, shadow, spacing, touchTarget, type } from '@/theme';
 
 const awayOffset = 240;
-const starters: Key[] = ['chat.starter1', 'chat.starter2', 'chat.starter3'];
 
 const errorKeys: Record<DirectError, Key> = {
   network: 'chat.errorNetwork',
@@ -114,42 +113,11 @@ function Message({ message, last }: { message: DirectMessage; last: boolean }) {
   );
 }
 
-function Empty({ onPick }: { onPick: (text: string) => void }) {
-  const { t, colors } = useSettings();
-  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
-  return (
-    <ScrollView ref={scroll} onLayout={() => scroll.current?.scrollToEnd({ animated: false })} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.empty}>
-      <Mark size={mark.empty} />
-      <AppText variant="greeting" accessibilityRole="header">
-        {t('chat.greeting')}
-      </AppText>
-      <View>
-        {starters.map((key) => (
-          <Pressable
-            key={key}
-            accessibilityRole="button"
-            accessibilityLabel={t(key)}
-            accessibilityHint={t('chat.starterHint')}
-            onPress={() => onPick(t(key))}
-            android_ripple={{ color: colors.outlineVariant }}
-            style={[styles.starter, { borderColor: colors.outlineVariant }]}
-          >
-            <AppText color="onSurfaceVariant" style={styles.fill}>
-              {t(key)}
-            </AppText>
-            <Icon name={I18nManager.isRTL ? { ios: 'arrow.up.right', android: 'north_east', web: 'north_east' } : { ios: 'arrow.up.left', android: 'north_west', web: 'north_west' }} color="onSurfaceVariant" size={18} />
-          </Pressable>
-        ))}
-      </View>
-    </ScrollView>
-  );
-}
-
-function Thread({ messages, onPick }: { messages: DirectMessage[]; onPick: (text: string) => void }) {
+function Thread({ messages }: { messages: DirectMessage[] }) {
   const { t } = useSettings();
   const list = useRef<FlatList<DirectMessage>>(null);
   const [away, setAway] = useState(false);
-  if (messages.length === 0) return <Empty onPick={onPick} />;
+  if (messages.length === 0) return <View style={styles.fill} />;
   const newestFirst = [...messages].reverse();
   return (
     <View style={styles.fill}>
@@ -200,10 +168,6 @@ export default function Chat() {
     setText('');
     input.current?.focus();
   };
-  const pick = (starter: string) => {
-    setText(starter);
-    input.current?.focus();
-  };
 
   return (
     <Screen
@@ -211,7 +175,7 @@ export default function Chat() {
       start={<Menu current="/" />}
       end={<IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} onPress={startNew} />}
     >
-      <Thread messages={chat.messages} onPick={pick} />
+      <Thread messages={chat.messages} />
       <View style={styles.composer}>
         {needsModel ? (
           <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite">
@@ -256,8 +220,6 @@ const styles = StyleSheet.create({
   cost: { marginStart: spacing.sm },
   thinking: { height: touchTarget / 2, justifyContent: 'center' },
   dot: { width: mark.thinking, height: mark.thinking, borderRadius: radius.full },
-  empty: { flexGrow: 1, justifyContent: 'flex-end', gap: spacing.lg, paddingBottom: spacing.lg },
-  starter: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget + spacing.sm, borderTopWidth: StyleSheet.hairlineWidth * 2 },
   latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },
   composer: { gap: spacing.sm, paddingBottom: spacing.sm },
   bar: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.field, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },

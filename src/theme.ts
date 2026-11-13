@@ -65,7 +65,7 @@ export const fonts = {
   serifBoldItalic: 'Literata_600SemiBold_Italic',
 } as const;
 
-export const mark = { thinking: 10, small: 28, empty: 44 } as const;
+export const mark = { thinking: 10, small: 28 } as const;
 
 export const type = {
   headline: { fontSize: 26, lineHeight: 34, fontWeight: '600' },
@@ -78,7 +78,6 @@ export const type = {
   answerHead1: { fontSize: 24, lineHeight: 32, fontFamily: fonts.serifBold },
   answerHead2: { fontSize: 20, lineHeight: 28, fontFamily: fonts.serifBold },
   answerHead3: { fontSize: 17, lineHeight: 28, fontFamily: fonts.serifBold },
-  greeting: { fontSize: 30, lineHeight: 38, fontFamily: fonts.serifBold },
 } as const satisfies Record<string, TextStyle>;
 
 function luminance(hex: string): number {

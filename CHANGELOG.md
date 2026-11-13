@@ -20,8 +20,8 @@
 - Answers are set in Literata, a reading serif, with no bubble. Your
   messages are in a blue tint bubble. New dependency
   `@expo-google-fonts/literata` 0.4.3 (font files only, four faces).
-- An empty chat shows the mark, "What do you want to know?" and three
-  starter lines that fill the message field.
+- An empty chat shows only the message field: no mark, no question and no
+  starter lines.
 - The header shows the title of the chat (its first message).
 - One pulsing dot shows while the first text of an answer has not come.
 - The composer has the model chip at the start and Send at the end.

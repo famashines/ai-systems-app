@@ -193,9 +193,7 @@ app                                           api-gateway --> ai-proxy --> OpenR
   font.
 - Colours are the brand tokens of `logo-master/SPEC.md`, with no new
   colour. Your message uses `primaryContainer`.
-- An empty chat shows the mark, the question "What do you want to know?"
-  and three starter lines. A starter line puts its text in the message
-  field; it does not send.
+- An empty chat shows only the message field.
 - While the first text of an answer has not come, one blue dot pulses.
   With "Remove animations" on in Android, the dot does not move.
 

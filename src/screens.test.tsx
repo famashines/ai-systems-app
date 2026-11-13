@@ -298,7 +298,7 @@ describe('App', () => {
       expect(screen.getByText('Stopped')).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('button', { name: 'New chat' }));
       expect(screen.queryByText('Long story')).toBeNull();
-      expect(screen.getByText('What do you want to know?')).toBeOnTheScreen();
+      expect(screen.queryByTestId('chat-list')).toBeNull();
     });
 
     it('lists the chats in the menu, opens an old chat, deletes a chat, and forgets all at sign-out', async () => {
@@ -357,14 +357,14 @@ describe('App', () => {
   });
 
   describe('Chat screen', () => {
-    it('greets with starter lines, needs a model, and puts a starter in the message field', async () => {
+    it('shows an empty chat with only the message field, and needs a model', async () => {
       await show(<Chat />);
       await ready();
-      expect(screen.getByRole('header', { name: 'What do you want to know?' })).toBeOnTheScreen();
+      expect(screen.getAllByRole('header')).toHaveLength(1);
       expect(screen.getByRole('header', { name: 'New chat' })).toBeOnTheScreen();
+      expect(screen.queryByTestId('fama-mark')).toBeNull();
       expect(screen.getByText('Choose a model to send a message.')).toBeOnTheScreen();
-      await fireEvent.press(screen.getByRole('button', { name: 'Help me plan my week' }));
-      expect(screen.getByLabelText('Message')).toHaveProp('value', 'Help me plan my week');
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Help me plan my week');
       expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
       expect(screen.getByRole('button', { name: 'Send' })).toHaveStyle({ width: 48, height: 48, borderRadius: 999 });
     });
@@ -491,7 +491,7 @@ describe('App', () => {
       await setItem('settings', { language: 'ur', theme: 'system' });
       await show(<Chat />);
       await ready();
-      expect(screen.getByRole('header', { name: 'آپ کیا جاننا چاہتے ہیں؟' })).toBeOnTheScreen();
+      expect(screen.getByRole('header', { name: 'نئی چیٹ' })).toBeOnTheScreen();
       await fireEvent.press(screen.getByTestId('menu'));
       expect(screen.getByText('چیٹس')).toBeOnTheScreen();
     });
