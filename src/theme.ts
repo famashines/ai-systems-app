@@ -10,6 +10,7 @@ export const lightColors = {
   onPrimary: '#FFFFFF',
   primaryContainer: '#D9E2FF',
   onPrimaryContainer: '#001A43',
+  success: '#1B6E3A',
   error: '#B3261E',
   onError: '#FFFFFF',
   errorContainer: '#F9DEDC',
@@ -31,6 +32,7 @@ export const darkColors: Colors = {
   onPrimary: '#002D6E',
   primaryContainer: '#284777',
   onPrimaryContainer: '#D9E2FF',
+  success: '#7DD99A',
   error: '#FFB4AB',
   onError: '#690005',
   errorContainer: '#93000A',
@@ -44,11 +46,15 @@ export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 } as const;
 
 export const radius = { md: 8, field: 14, full: 999 } as const;
 
-export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)' } as const;
+export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)', menu: '0 4px 16px rgba(0, 0, 0, 0.18)' } as const;
 
-export const motion = { open: 240, pulse: 900 } as const;
+export const motion = { fade: 160, open: 240, pulse: 900 } as const;
 
 export const touchTarget = 48;
+
+export const headerHeight = 56;
+
+export const control = { chip: 32, compactButton: 36, dot: 3, menuMin: 220, menuMax: 280 } as const;
 
 export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
 
@@ -65,7 +71,7 @@ export const fonts = {
   serifBoldItalic: 'Literata_600SemiBold_Italic',
 } as const;
 
-export const mark = { thinking: 10, small: 28, empty: 44 } as const;
+export const mark = { thinking: 10, small: 28 } as const;
 
 export const type = {
   headline: { fontSize: 26, lineHeight: 34, fontWeight: '600' },
@@ -78,7 +84,6 @@ export const type = {
   answerHead1: { fontSize: 24, lineHeight: 32, fontFamily: fonts.serifBold },
   answerHead2: { fontSize: 20, lineHeight: 28, fontFamily: fonts.serifBold },
   answerHead3: { fontSize: 17, lineHeight: 28, fontFamily: fonts.serifBold },
-  greeting: { fontSize: 30, lineHeight: 38, fontFamily: fonts.serifBold },
 } as const satisfies Record<string, TextStyle>;
 
 function luminance(hex: string): number {

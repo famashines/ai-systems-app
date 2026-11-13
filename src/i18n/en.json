@@ -1,6 +1,7 @@
 {
   "app.name": "Fama AI",
   "common.retry": "Try again",
+  "common.back": "Back",
   "common.error": "Something went wrong.",
   "login.title": "Sign in",
   "login.body": "Sign in with your famashines account.",
@@ -105,9 +106,16 @@
   "drawer.noChats": "No chats yet.",
   "drawer.chat": "Chat: {title}",
   "drawer.chatDelete": "Delete the chat {title}",
-  "chat.greeting": "What do you want to know?",
-  "chat.starter1": "Explain a difficult idea in simple words",
-  "chat.starter2": "Write a clear email for me",
-  "chat.starter3": "Help me plan my week",
-  "chat.starterHint": "Puts this text in the message field."
+  "common.cancel": "Cancel",
+  "common.save": "Save",
+  "chat.more": "More options",
+  "chat.bookmark": "Bookmark",
+  "chat.unbookmark": "Remove bookmark",
+  "chat.rename": "Rename",
+  "chat.delete": "Delete",
+  "chat.renameTitle": "Rename chat",
+  "chat.renameLabel": "Chat name",
+  "chat.deleteTitle": "Delete this chat?",
+  "chat.deleteBody": "You cannot undo this.",
+  "drawer.bookmarks": "Bookmarks"
 }

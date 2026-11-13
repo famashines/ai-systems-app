@@ -112,6 +112,36 @@ it('signs in with the code flow and PKCE, keeps the refresh token in secure stor
   expect(await auth.getAccessToken()).toBe('access-1');
 });
 
+it('uses the Expo Go address as the redirect inside Expo Go, for the browser and the token call', async () => {
+  jest.doMock('expo-linking', () => ({ createURL: (path: string) => `exp://192.168.1.20:8081/--/${path}` }));
+  jest.isolateModules(() => {
+    const Constants = require('expo-constants');
+    jest.replaceProperty(Constants.default, 'executionEnvironment', Constants.ExecutionEnvironment.StoreClient);
+    auth = require('@/lib/auth');
+  });
+  reply(`${issuer}/.well-known/openid-configuration`, discoveryDoc);
+  reply(tokenEndpoint, tokens(1));
+
+  expect(await auth.signIn()).toBe(true);
+
+  const authorizeUrl = new URL(jest.mocked(openAuthSessionAsync).mock.calls[0]![0]);
+  expect(authorizeUrl.searchParams.get('redirect_uri')).toBe('exp://192.168.1.20:8081/--/oauth2redirect');
+  expect(calls.find((call) => call.url === tokenEndpoint)!.body.get('redirect_uri')).toBe('exp://192.168.1.20:8081/--/oauth2redirect');
+  jest.dontMock('expo-linking');
+});
+
+it('gives a fixed token and needs no login when EXPO_PUBLIC_LOGIN is off', async () => {
+  process.env.EXPO_PUBLIC_LOGIN = 'off';
+  jest.isolateModules(() => {
+    auth = require('@/lib/auth');
+  });
+  delete process.env.EXPO_PUBLIC_LOGIN;
+  expect(await auth.restore()).toBe(true);
+  expect(await auth.refresh()).toBe(true);
+  expect(await auth.getAccessToken()).toBe(auth.noLoginToken);
+  expect(calls).toEqual([]);
+});
+
 it('returns false when the person cancels the browser', async () => {
   reply(`${issuer}/.well-known/openid-configuration`, discoveryDoc);
   jest.mocked(openAuthSessionAsync).mockResolvedValue({ type: 'cancel' } as Awaited<ReturnType<typeof openAuthSessionAsync>>);

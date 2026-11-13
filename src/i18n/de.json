@@ -1,6 +1,7 @@
 {
   "app.name": "Fama AI",
   "common.retry": "Erneut versuchen",
+  "common.back": "Zurück",
   "common.error": "Etwas ist schiefgelaufen.",
   "login.title": "Anmelden",
   "login.body": "Melden Sie sich mit Ihrem famashines-Konto an.",
@@ -105,9 +106,16 @@
   "drawer.noChats": "Noch keine Chats.",
   "drawer.chat": "Chat: {title}",
   "drawer.chatDelete": "Chat {title} löschen",
-  "chat.greeting": "Was möchtest du wissen?",
-  "chat.starter1": "Erkläre eine schwierige Idee in einfachen Worten",
-  "chat.starter2": "Schreibe eine klare E-Mail für mich",
-  "chat.starter3": "Hilf mir, meine Woche zu planen",
-  "chat.starterHint": "Setzt diesen Text in das Nachrichtenfeld."
+  "common.cancel": "Abbrechen",
+  "common.save": "Speichern",
+  "chat.more": "Weitere Optionen",
+  "chat.bookmark": "Lesezeichen setzen",
+  "chat.unbookmark": "Lesezeichen entfernen",
+  "chat.rename": "Umbenennen",
+  "chat.delete": "Löschen",
+  "chat.renameTitle": "Chat umbenennen",
+  "chat.renameLabel": "Name des Chats",
+  "chat.deleteTitle": "Diesen Chat löschen?",
+  "chat.deleteBody": "Das lässt sich nicht rückgängig machen.",
+  "drawer.bookmarks": "Lesezeichen"
 }

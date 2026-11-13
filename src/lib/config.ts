@@ -20,6 +20,7 @@ const url = (fallback: string) =>
 const Env = z.object({
   EXPO_PUBLIC_OIDC_ISSUER: url('https://auth.famashines.com/realms/ai-systems'),
   EXPO_PUBLIC_API_URL: url('https://ai.famashines.com'),
+  EXPO_PUBLIC_LOGIN: z.preprocess((value) => value || undefined, z.enum(['on', 'off']).default('on')),
 });
 
 export function readConfig(env: Record<string, string | undefined>) {
@@ -29,10 +30,12 @@ export function readConfig(env: Record<string, string | undefined>) {
     oidcClientId: 'ai-systems-app',
     redirectUri: 'com.famashines.ai:/oauth2redirect',
     apiUrl: parsed.EXPO_PUBLIC_API_URL,
+    loginOff: parsed.EXPO_PUBLIC_LOGIN === 'off',
   };
 }
 
 export const config = readConfig({
   EXPO_PUBLIC_OIDC_ISSUER: process.env.EXPO_PUBLIC_OIDC_ISSUER,
   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+  EXPO_PUBLIC_LOGIN: process.env.EXPO_PUBLIC_LOGIN,
 });

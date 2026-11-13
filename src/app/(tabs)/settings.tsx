@@ -2,9 +2,10 @@ import Constants from 'expo-constants';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Menu } from '@/components/drawer';
+import { Back } from '@/components/drawer';
 import { AppText, Button, Card, Screen, StateView } from '@/components/ui';
 import { languages, type Key } from '@/i18n';
+import { config } from '@/lib/config';
 import { useSession } from '@/state/session';
 import { useSettings, type LanguageChoice, type ThemeChoice } from '@/state/settings';
 import { radius, spacing, touchTarget } from '@/theme';
@@ -67,7 +68,7 @@ export default function Settings() {
   ];
 
   return (
-    <Screen title={t('tabs.settings')} start={<Menu current="/settings" />}>
+    <Screen title={t('tabs.settings')} start={<Back />}>
       <ScrollView contentContainerStyle={styles.content}>
         <Choices label={t('settings.language')} options={languageOptions} value={settings.language} onChange={(language) => void update({ language })} />
         <Choices label={t('settings.theme')} options={themeOptions} value={settings.theme} onChange={(theme) => void update({ theme })} />
@@ -83,7 +84,7 @@ export default function Settings() {
           </AppText>
         </View>
         {state === 'failed' ? <StateView kind="error" title={t('common.error')} retryLabel={t('common.retry')} onRetry={() => void leave()} /> : null}
-        <Button label={t('settings.signOut')} variant="outline" busy={state === 'busy'} onPress={() => void leave()} />
+        {config.loginOff ? null : <Button label={t('settings.signOut')} variant="outline" busy={state === 'busy'} onPress={() => void leave()} />}
       </ScrollView>
     </Screen>
   );
@@ -96,6 +97,6 @@ const styles = StyleSheet.create({
   version: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs },
   option: { minHeight: touchTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  warning: { padding: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
+  warning: { padding: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
   dot: { width: 10, height: 10, borderRadius: radius.full },
 });

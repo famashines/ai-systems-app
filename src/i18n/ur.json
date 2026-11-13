@@ -1,6 +1,7 @@
 {
   "app.name": "Fama AI",
   "common.retry": "دوبارہ کوشش کریں",
+  "common.back": "واپس",
   "common.error": "کچھ غلط ہو گیا۔",
   "login.title": "سائن ان",
   "login.body": "اپنے famashines اکاؤنٹ سے سائن ان کریں۔",
@@ -105,9 +106,16 @@
   "drawer.noChats": "ابھی کوئی چیٹ نہیں۔",
   "drawer.chat": "چیٹ: {title}",
   "drawer.chatDelete": "چیٹ {title} حذف کریں",
-  "chat.greeting": "آپ کیا جاننا چاہتے ہیں؟",
-  "chat.starter1": "ایک مشکل خیال آسان الفاظ میں سمجھائیں",
-  "chat.starter2": "میرے لیے ایک واضح ای میل لکھیں",
-  "chat.starter3": "میرا ہفتہ پلان کرنے میں مدد کریں",
-  "chat.starterHint": "یہ متن پیغام کے خانے میں ڈالتا ہے۔"
+  "common.cancel": "منسوخ کریں",
+  "common.save": "محفوظ کریں",
+  "chat.more": "مزید اختیارات",
+  "chat.bookmark": "بک مارک کریں",
+  "chat.unbookmark": "بک مارک ہٹائیں",
+  "chat.rename": "نام بدلیں",
+  "chat.delete": "حذف کریں",
+  "chat.renameTitle": "چیٹ کا نام بدلیں",
+  "chat.renameLabel": "چیٹ کا نام",
+  "chat.deleteTitle": "یہ چیٹ حذف کریں؟",
+  "chat.deleteBody": "آپ اسے واپس نہیں لا سکتے۔",
+  "drawer.bookmarks": "بک مارکس"
 }

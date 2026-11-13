@@ -1,4 +1,4 @@
-import { ApiError, getBudget, listModels, setBudget } from '@/lib/api';
+import { ApiError, chatTitle, getBudget, listModels, setBudget } from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { fakeServer, json } from '@/test-fakes';
 
@@ -141,6 +141,24 @@ describe('model list', () => {
     server.on('GET /api/models', new TypeError('Network request failed'), problem(403, 'forbidden'));
     await expect(listModels(0)).rejects.toMatchObject({ kind: 'network' });
     await expect(listModels(0)).rejects.toMatchObject({ kind: 'rejected', status: 403 });
+    expect(server.requests).toHaveLength(2);
+  });
+});
+
+describe('chat title', () => {
+  const messages = [{ role: 'user' as const, content: 'Help me plan a trip' }];
+
+  it('posts the chat id and the first messages with the bearer token, and gives the title', async () => {
+    server.on('POST /api/chat/title', json(200, { title: 'Trip plan', costMicroUsd: 12 }));
+    expect(await chatTitle('chat-1', messages)).toBe('Trip plan');
+    expect(server.requests[0]!.body).toEqual({ chatId: 'chat-1', messages });
+    expect(server.requests[0]!.headers.get('Authorization')).toBe('Bearer access-1');
+  });
+
+  it('fails on an empty title or an error, with no retry', async () => {
+    server.on('POST /api/chat/title', json(200, { title: '  ' }), problem(503, 'unavailable'));
+    await expect(chatTitle('chat-1', messages)).rejects.toMatchObject({ kind: 'unavailable' });
+    await expect(chatTitle('chat-1', messages)).rejects.toMatchObject({ kind: 'unavailable' });
     expect(server.requests).toHaveLength(2);
   });
 });

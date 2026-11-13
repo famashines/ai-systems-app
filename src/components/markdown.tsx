@@ -26,6 +26,7 @@ export function CopyButton({ text, label, testID }: { text: string; label: strin
       testID={testID}
       icon={copied ? { ios: 'checkmark', android: 'check', web: 'check' } : { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
       label={copied ? t('chat.copied') : label}
+      color={copied ? 'success' : 'onSurfaceVariant'}
       onPress={copy}
     />
   );
@@ -191,7 +192,7 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   del: { textDecorationLine: 'line-through' },
   link: { textDecorationLine: 'underline' },
-  code: { direction: 'ltr', borderRadius: radius.md, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
+  code: { direction: 'ltr', borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth * 2, overflow: 'hidden' },
   codeText: { textAlign: 'left', writingDirection: 'ltr' },
   codeHead: { flexDirection: 'row', alignItems: 'center', paddingStart: spacing.md },
   codeBody: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },

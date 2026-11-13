@@ -1,3 +1,5 @@
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Linking from 'expo-linking';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 
@@ -8,6 +10,7 @@ export const refreshEarlyMs = 30_000;
 export const requestTimeoutMs = 15_000;
 export const signOutWaitMs = 10_000;
 export const lateAnswerMs = 60_000;
+export const noLoginToken = 'no-login';
 
 export class IssuerUnreachableError extends Error {}
 export class IssuerInvalidError extends Error {}
@@ -122,9 +125,10 @@ async function clear(): Promise<void> {
 export async function signIn(): Promise<boolean> {
   const started = generation;
   const doc = await discover();
+  const redirectUri = Constants.executionEnvironment === ExecutionEnvironment.StoreClient ? Linking.createURL('oauth2redirect') : config.redirectUri;
   const request = new AuthSession.AuthRequest({
     clientId: config.oidcClientId,
-    redirectUri: config.redirectUri,
+    redirectUri,
     scopes: ['openid', 'offline_access'],
     usePKCE: true,
   });
@@ -135,7 +139,7 @@ export async function signIn(): Promise<boolean> {
     AuthSession.exchangeCodeAsync(
       {
         clientId: config.oidcClientId,
-        redirectUri: config.redirectUri,
+        redirectUri,
         code: result.params.code ?? '',
         extraParams: { code_verifier: request.codeVerifier },
       },
@@ -184,16 +188,19 @@ export function resumeRefresh(now = Date.now()): void {
 }
 
 export function refresh(): Promise<boolean> {
+  if (config.loginOff) return Promise.resolve(true);
   if (closing) return Promise.resolve(false);
   return withTimeout(startRefresh(), requestTimeoutMs);
 }
 
 export async function restore(): Promise<boolean> {
+  if (config.loginOff) return true;
   if (!(await SecureStore.getItemAsync(refreshTokenKey))) return false;
   return refresh().catch(() => true);
 }
 
 export async function getAccessToken(): Promise<string | null> {
+  if (config.loginOff) return noLoginToken;
   if (access && access.expiresAt - refreshEarlyMs > Date.now()) return access.token;
   return (await refresh()) && access ? access.token : null;
 }

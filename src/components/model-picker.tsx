@@ -1,6 +1,6 @@
 import type { ModelListItemV1, ReasoningEffort } from '@famashines/ai-systems-contracts';
 import { useState } from 'react';
-import { ActivityIndicator, Animated, Dimensions, FlatList, KeyboardAvoidingView, Modal, PanResponder, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Dimensions, FlatList, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText, Button } from '@/components/ui';
@@ -9,12 +9,13 @@ import type { Choice as ModelChoice } from '@/lib/api';
 import { useData } from '@/state/data';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
-import { motion, radius, rail, readingWidth, spacing, touchTarget, type } from '@/theme';
+import { control, motion, radius, rail, readingWidth, spacing, touchTarget, type } from '@/theme';
 
 const Sheet = Animated.createAnimatedComponent(SafeAreaView);
 const closeDistance = 120;
 const closeSpeed = 0.8;
 const tapDistance = 4;
+const chipSlop = { top: (touchTarget - control.chip) / 2, bottom: (touchTarget - control.chip) / 2 };
 
 function useDragToClose(onClose: () => void) {
   const [offset] = useState(() => new Animated.Value(0));
@@ -111,7 +112,7 @@ function EffortRail({ efforts, selected, onPick }: { efforts: ReasoningEffort[];
   );
 }
 
-export function ModelPicker({ disabled }: { disabled: boolean }) {
+export function ModelPicker({ disabled, hidden = false }: { disabled: boolean; hidden?: boolean }) {
   const { t, colors, settings, update } = useSettings();
   const { models, reloadModels } = useData();
   const { locked } = useSession();
@@ -128,6 +129,7 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
   const shown = words ? models.items.filter((model) => model.name.toLowerCase().includes(words) || model.id.toLowerCase().includes(words)) : models.items;
 
   const show = () => {
+    Keyboard.dismiss();
     setQuery('');
     drag.offset.setValue(0);
     setOpen(true);
@@ -141,26 +143,32 @@ export function ModelPicker({ disabled }: { disabled: boolean }) {
 
   return (
     <>
-      <Pressable
-        testID="model-chip"
-        accessibilityRole="button"
-        accessibilityLabel={chipLabel}
-        accessibilityHint={t('chat.modelHint')}
-        accessibilityState={{ disabled }}
-        disabled={disabled}
-        onPress={show}
-        android_ripple={{ color: colors.outlineVariant }}
-        style={[styles.chip, { backgroundColor: fullName ? colors.surfaceContainerHigh : colors.primaryContainer, opacity: disabled ? 0.38 : 1 }]}
-      >
-        <AppText variant="label" color={fullName ? 'onSurface' : 'onPrimaryContainer'} numberOfLines={1} style={styles.chipText}>
-          {fullName ? shortName(fullName) : t('chat.modelChoose')}
-        </AppText>
-        {effortText ? (
-          <AppText variant="bodySmall" color="onSurfaceVariant" numberOfLines={1}>
-            {effortText}
+      {hidden ? null : (
+        <Pressable
+          testID="model-chip"
+          accessibilityRole="button"
+          accessibilityLabel={chipLabel}
+          accessibilityHint={t('chat.modelHint')}
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={show}
+          hitSlop={chipSlop}
+          android_ripple={{ color: colors.outlineVariant }}
+          style={[styles.chip, { backgroundColor: fullName ? colors.surfaceContainerHigh : colors.primaryContainer, opacity: disabled ? 0.38 : 1 }]}
+        >
+          <AppText variant="bodySmall" color={fullName ? 'onSurface' : 'onPrimaryContainer'} numberOfLines={1} style={styles.chipText}>
+            {fullName ? shortName(fullName) : t('chat.modelChoose')}
           </AppText>
-        ) : null}
-      </Pressable>
+          {effortText ? (
+            <>
+              <View style={[styles.chipDot, { backgroundColor: colors.outline }]} />
+              <AppText variant="bodySmall" color="onSurfaceVariant" numberOfLines={1}>
+                {effortText}
+              </AppText>
+            </>
+          ) : null}
+        </Pressable>
+      )}
       <Modal testID="model-picker" visible={open && !locked} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
         <Pressable accessible={false} importantForAccessibility="no" onPress={close} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
         <KeyboardAvoidingView behavior="padding" pointerEvents="box-none" style={styles.wrap}>
@@ -239,14 +247,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     borderTopStartRadius: radius.md,
     borderTopEndRadius: radius.md,
-    borderCurve: 'continuous',
     overflow: 'hidden',
   },
   handle: { height: touchTarget, alignItems: 'center', justifyContent: 'center' },
   pill: { width: 36, height: rail.edge, borderRadius: radius.full },
-  chip: { minHeight: touchTarget, minWidth: touchTarget, flexShrink: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
-  search: { minHeight: touchTarget, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.field, borderCurve: 'continuous', textAlign: 'auto' },
-  row: { minHeight: touchTarget + spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.md, borderCurve: 'continuous', overflow: 'hidden' },
+  chip: { height: control.chip, minWidth: touchTarget, alignSelf: 'flex-start', marginVertical: (touchTarget - control.chip) / 2, marginStart: spacing.xs, flexDirection: 'row', gap: spacing.sm, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing.sm + spacing.xs, borderRadius: radius.md, overflow: 'hidden' },
+  chipDot: { width: control.dot, height: control.dot, borderRadius: radius.full },
+  search: { minHeight: touchTarget, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.field, textAlign: 'auto' },
+  row: { minHeight: touchTarget + spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.md, overflow: 'hidden' },
   radio: { width: 20, height: 20, borderRadius: radius.full, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   dot: { width: 10, height: 10, borderRadius: radius.full },
   chipText: { flexShrink: 1 },

@@ -4,6 +4,7 @@ import { Clipboard, Linking } from 'react-native';
 import { copiedShowMs, CopyButton, Markdown, safeLink } from '@/components/markdown';
 import { SessionProvider } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
+import { lightColors } from '@/theme';
 
 jest.mock('@/lib/auth', () => ({ restore: jest.fn(async () => false), onSessionEnded: jest.fn(), onAccessToken: jest.fn() }));
 
@@ -61,9 +62,11 @@ it('copies the text and shows Copied for a short time', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Copy the message' }));
   expect(copy).toHaveBeenCalledWith('The text');
   expect(screen.getByRole('button', { name: 'Copied' })).toBeOnTheScreen();
+  expect(JSON.stringify(screen.toJSON())).toContain(lightColors.success);
   await act(async () => {
     jest.advanceTimersByTime(copiedShowMs);
   });
   expect(screen.getByRole('button', { name: 'Copy the message' })).toBeOnTheScreen();
+  expect(JSON.stringify(screen.toJSON())).not.toContain(lightColors.success);
   jest.useRealTimers();
 });

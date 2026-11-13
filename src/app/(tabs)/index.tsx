@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentRef } from 'react';
-import { AccessibilityInfo, Animated, FlatList, I18nManager, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Animated, FlatList, Keyboard, LayoutAnimation, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { ChatMenu } from '@/components/chat-menu';
 import { Menu } from '@/components/drawer';
 import { CopyButton, Markdown } from '@/components/markdown';
 import { ModelPicker, useChoice } from '@/components/model-picker';
-import { AppText, Icon, IconButton, Mark, Screen } from '@/components/ui';
+import { AppText, IconButton, Screen } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { messageTextMax } from '@/lib/api';
 import { direct, type DirectError, type DirectMessage } from '@/lib/direct';
@@ -13,7 +14,6 @@ import { useSettings } from '@/state/settings';
 import { mark, motion, radius, shadow, spacing, touchTarget, type } from '@/theme';
 
 const awayOffset = 240;
-const starters: Key[] = ['chat.starter1', 'chat.starter2', 'chat.starter3'];
 
 const errorKeys: Record<DirectError, Key> = {
   network: 'chat.errorNetwork',
@@ -100,6 +100,7 @@ function Message({ message, last }: { message: DirectMessage; last: boolean }) {
               testID="regenerate"
               icon={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
               label={t('chat.regenerate')}
+              color="onSurfaceVariant"
               onPress={() => direct.regenerate(choice)}
             />
           ) : null}
@@ -114,42 +115,11 @@ function Message({ message, last }: { message: DirectMessage; last: boolean }) {
   );
 }
 
-function Empty({ onPick }: { onPick: (text: string) => void }) {
-  const { t, colors } = useSettings();
-  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
-  return (
-    <ScrollView ref={scroll} onLayout={() => scroll.current?.scrollToEnd({ animated: false })} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.empty}>
-      <Mark size={mark.empty} />
-      <AppText variant="greeting" accessibilityRole="header">
-        {t('chat.greeting')}
-      </AppText>
-      <View>
-        {starters.map((key) => (
-          <Pressable
-            key={key}
-            accessibilityRole="button"
-            accessibilityLabel={t(key)}
-            accessibilityHint={t('chat.starterHint')}
-            onPress={() => onPick(t(key))}
-            android_ripple={{ color: colors.outlineVariant }}
-            style={[styles.starter, { borderColor: colors.outlineVariant }]}
-          >
-            <AppText color="onSurfaceVariant" style={styles.fill}>
-              {t(key)}
-            </AppText>
-            <Icon name={I18nManager.isRTL ? { ios: 'arrow.up.right', android: 'north_east', web: 'north_east' } : { ios: 'arrow.up.left', android: 'north_west', web: 'north_west' }} color="onSurfaceVariant" size={18} />
-          </Pressable>
-        ))}
-      </View>
-    </ScrollView>
-  );
-}
-
-function Thread({ messages, onPick }: { messages: DirectMessage[]; onPick: (text: string) => void }) {
+function Thread({ messages }: { messages: DirectMessage[] }) {
   const { t } = useSettings();
   const list = useRef<FlatList<DirectMessage>>(null);
   const [away, setAway] = useState(false);
-  if (messages.length === 0) return <Empty onPick={onPick} />;
+  if (messages.length === 0) return <Pressable testID="chat-empty" accessible={false} importantForAccessibility="no" onPress={() => Keyboard.dismiss()} style={styles.fill} />;
   const newestFirst = [...messages].reverse();
   return (
     <View style={styles.fill}>
@@ -163,6 +133,7 @@ function Thread({ messages, onPick }: { messages: DirectMessage[]; onPick: (text
         renderItem={({ item, index }) => <Message message={item} last={index === 0} />}
         onScroll={(event) => setAway(event.nativeEvent.contentOffset.y > awayOffset)}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={styles.list}
       />
       {away ? (
@@ -184,12 +155,34 @@ export default function Chat() {
   const { t, colors } = useSettings();
   const chat = useSyncExternalStore(direct.subscribe, direct.get);
   const [text, setText] = useState('');
+  const [focused, setFocused] = useState(false);
+  const [still, setStill] = useState(false);
+  const [reader, setReader] = useState(false);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const choice = useChoice();
   const needsModel = choice.model === undefined;
+  const chipShown = focused || needsModel || reader;
   const canSend = text.trim() !== '' && !needsModel && !chat.busy;
-  const title = chat.history.find((item) => item.chatId === chat.chatId)?.title ?? t('chat.newChat');
+  const summary = chat.history.find((item) => item.chatId === chat.chatId);
+  const title = summary?.title ?? t('chat.newChat');
 
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setStill);
+    const motionSub = AccessibilityInfo.addEventListener('reduceMotionChanged', setStill);
+    void AccessibilityInfo.isScreenReaderEnabled().then(setReader);
+    const readerSub = AccessibilityInfo.addEventListener('screenReaderChanged', setReader);
+    const keyboardSub = Keyboard.addListener('keyboardDidHide', () => input.current?.blur());
+    return () => {
+      motionSub.remove();
+      readerSub.remove();
+      keyboardSub.remove();
+    };
+  }, []);
+
+  const focus = (on: boolean) => {
+    if (!still && !needsModel) LayoutAnimation.configureNext(LayoutAnimation.create(motion.fade, 'easeInEaseOut', 'opacity'));
+    setFocused(on);
+  };
   const submit = () => {
     if (!canSend) return;
     direct.send(text, choice);
@@ -200,46 +193,50 @@ export default function Chat() {
     setText('');
     input.current?.focus();
   };
-  const pick = (starter: string) => {
-    setText(starter);
-    input.current?.focus();
-  };
 
   return (
     <Screen
       title={title}
-      start={<Menu current="/" />}
-      end={<IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} onPress={startNew} />}
+      start={<Menu />}
+      end={
+        chat.messages.length > 0 ? (
+          <>
+            <IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} onPress={startNew} />
+            {summary ? <ChatMenu chat={summary} /> : null}
+          </>
+        ) : null
+      }
     >
-      <Thread messages={chat.messages} onPick={pick} />
+      <Thread messages={chat.messages} />
       <View style={styles.composer}>
         {needsModel ? (
           <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityLiveRegion="polite">
             {t('chat.modelNeeded')}
           </AppText>
         ) : null}
-        <View testID="composer" style={[styles.bar, { backgroundColor: colors.surfaceContainer, borderColor: colors.outlineVariant }]}>
-          <TextInput
-            ref={input}
-            testID="chat-input"
-            value={text}
-            onChangeText={setText}
-            multiline
-            maxLength={messageTextMax}
-            accessibilityLabel={t('chat.inputLabel')}
-            placeholder={t('chat.placeholder')}
-            placeholderTextColor={colors.onSurfaceVariant}
-            style={[styles.input, type.body, { color: colors.onSurface }]}
-          />
-          <View style={styles.tools}>
-            <ModelPicker disabled={false} />
-            <View style={styles.fill} />
-            {chat.busy ? (
-              <IconButton testID="stop" icon={{ ios: 'stop.fill', android: 'stop', web: 'stop' }} label={t('chat.stop')} filled onPress={direct.stop} />
-            ) : (
-              <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled disabled={!canSend} onPress={submit} />
-            )}
+        <View testID="composer" style={[styles.bar, { backgroundColor: colors.surfaceContainer }]}>
+          <View style={styles.fill}>
+            <TextInput
+              ref={input}
+              testID="chat-input"
+              value={text}
+              onChangeText={setText}
+              onFocus={() => focus(true)}
+              onBlur={() => focus(false)}
+              multiline
+              maxLength={messageTextMax}
+              accessibilityLabel={t('chat.inputLabel')}
+              placeholder={t('chat.placeholder')}
+              placeholderTextColor={colors.onSurfaceVariant}
+              style={[styles.input, type.body, { color: colors.onSurface }]}
+            />
+            <ModelPicker disabled={false} hidden={!chipShown} />
           </View>
+          {chat.busy ? (
+            <IconButton testID="stop" icon={{ ios: 'stop.fill', android: 'stop', web: 'stop' }} label={t('chat.stop')} filled compact onPress={direct.stop} />
+          ) : (
+            <IconButton icon={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }} label={t('chat.send')} filled compact disabled={!canSend} onPress={submit} />
+          )}
         </View>
       </View>
     </Screen>
@@ -250,17 +247,14 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { gap: spacing.lg, paddingVertical: spacing.md },
   mine: { alignItems: 'flex-end' },
-  bubble: { maxWidth: '85%', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.md, borderCurve: 'continuous' },
+  bubble: { maxWidth: '85%', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.md },
   answer: { gap: spacing.sm, alignSelf: 'stretch' },
   actions: { flexDirection: 'row', alignItems: 'center', marginStart: -spacing.sm - spacing.xs },
   cost: { marginStart: spacing.sm },
   thinking: { height: touchTarget / 2, justifyContent: 'center' },
   dot: { width: mark.thinking, height: mark.thinking, borderRadius: radius.full },
-  empty: { flexGrow: 1, justifyContent: 'flex-end', gap: spacing.lg, paddingBottom: spacing.lg },
-  starter: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget + spacing.sm, borderTopWidth: StyleSheet.hairlineWidth * 2 },
   latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },
   composer: { gap: spacing.sm, paddingBottom: spacing.sm },
-  bar: { gap: spacing.xs, padding: spacing.sm, borderRadius: radius.field, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2, boxShadow: shadow.composer },
-  tools: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  bar: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.xs, padding: spacing.sm, borderRadius: radius.field, boxShadow: shadow.composer },
   input: { minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.sm, paddingVertical: (touchTarget - type.body.lineHeight) / 2, textAlign: 'auto', textAlignVertical: 'top' },
 });

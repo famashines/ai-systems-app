@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { AppState } from 'react-native';
 
 import * as auth from '@/lib/auth';
+import { config } from '@/lib/config';
 import { canLock, shouldLock, takeAppReload, unlock } from '@/lib/lock';
 
 export type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -42,9 +43,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canLockOrTrue(),
         takeAppReload().catch(() => false),
       ]);
-      lockable.current = secure;
+      lockable.current = secure && !config.loginOff;
       setDeviceSecure(secure);
-      if (signedIn && secure && !reloaded) setLocked(true);
+      if (signedIn && lockable.current && !reloaded) setLocked(true);
       setStatus(signedIn ? 'signedIn' : 'signedOut');
     })();
   }, []);
@@ -57,7 +58,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       backgroundAt.current = null;
       if (due && status === 'signedIn' && lockable.current) setLocked(true);
       void canLockOrTrue().then((secure) => {
-        lockable.current = secure;
+        lockable.current = secure && !config.loginOff;
         setDeviceSecure(secure);
       });
     });

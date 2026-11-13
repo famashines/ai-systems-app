@@ -49,11 +49,25 @@ release scripts (docs/release.md, section 4).
 | -------- | ------- | --- |
 | `EXPO_PUBLIC_OIDC_ISSUER` | `https://auth.famashines.com/realms/ai-systems` | Keycloak issuer for the login |
 | `EXPO_PUBLIC_API_URL` | `https://ai.famashines.com` | gateway origin for `/api` |
+| `EXPO_PUBLIC_LOGIN` | `on` | `off` turns the login off, for internal testing only |
+
+With `EXPO_PUBLIC_LOGIN=off` the app shows no login, no lock screen and no
+Sign out. It sends the fixed bearer value `no-login`. This works only when
+api-gateway and ai-proxy have `OWNER_WITHOUT_LOGIN` set. Setting the monthly
+cap still needs a login, so the cap cannot change while the login is off.
+Do not ship a production release with the login off.
 
 The client id is `ai-systems-app`. The redirect URI is
 `com.famashines.ai:/oauth2redirect`, a private-use scheme in reverse-domain
 form (RFC 8252). The Keycloak client must have the same redirect URI. The
-app scheme is `com.famashines.ai`. `EXPO_PUBLIC_*` values go into the
+app scheme is `com.famashines.ai`.
+
+In Expo Go, the redirect URI is the Expo Go address of Metro, for example
+`exp://192.168.1.20:8081/--/oauth2redirect`, so that the login returns to
+Expo Go and not to an installed build. Add this address to the valid
+redirect URIs of the Keycloak client for each computer and port that you
+use. Development and release builds still use
+`com.famashines.ai:/oauth2redirect`. `EXPO_PUBLIC_*` values go into the
 bundle. Do not put a secret in them.
 
 The app accepts a discovery document only when its `issuer` is the
@@ -191,11 +205,10 @@ app                                           api-gateway --> ai-proxy --> OpenR
   are JS assets, so they come with an EAS Update. Until they load, and for
   scripts that Literata does not have (Urdu), Android uses the system
   font.
-- Colours are the brand tokens of `logo-master/SPEC.md`, with no new
-  colour. Your message uses `primaryContainer`.
-- An empty chat shows the mark, the question "What do you want to know?"
-  and three starter lines. A starter line puts its text in the message
-  field; it does not send.
+- Colours are the brand tokens of `logo-master/SPEC.md`, plus one green
+  (`success`) for the check that shows after a copy. Your message uses
+  `primaryContainer`.
+- An empty chat shows only the message field.
 - While the first text of an answer has not come, one blue dot pulses.
   With "Remove animations" on in Android, the dot does not move.
 

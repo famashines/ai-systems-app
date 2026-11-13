@@ -4,7 +4,7 @@ import { ActivityIndicator, Image, KeyboardAvoidingView, Pressable, StyleSheet, 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSettings } from '@/state/settings';
-import { radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
+import { control, headerHeight, radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
 
 export function AppText({ variant = 'body', color = 'onSurface', style, ...props }: TextProps & { variant?: keyof typeof type; color?: keyof Colors }) {
   const { colors } = useSettings();
@@ -29,12 +29,15 @@ type IconButtonProps = {
   onPress: () => void;
   disabled?: boolean;
   filled?: boolean;
+  compact?: boolean;
+  color?: keyof Colors;
   testID?: string;
   accessibilityHint?: string;
 };
 
-export function IconButton({ icon, label, onPress, disabled = false, filled = false, testID, accessibilityHint }: IconButtonProps) {
+export function IconButton({ icon, label, onPress, disabled = false, filled = false, compact = false, color = 'onSurface', testID, accessibilityHint }: IconButtonProps) {
   const { colors } = useSettings();
+  const muted = filled && disabled;
   return (
     <Pressable
       testID={testID}
@@ -44,10 +47,15 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
+      hitSlop={compact ? (touchTarget - control.compactButton) / 2 : undefined}
       android_ripple={{ color: colors.outlineVariant, borderless: !filled }}
-      style={({ pressed }) => [styles.iconButton, { backgroundColor: filled ? colors.primary : 'transparent', opacity: disabled ? 0.38 : pressed ? 0.7 : 1 }]}
+      style={({ pressed }) => [
+        styles.iconButton,
+        compact && styles.compact,
+        { backgroundColor: muted ? colors.surfaceContainerHigh : filled ? colors.primary : 'transparent', opacity: muted ? 1 : disabled ? 0.38 : pressed ? 0.7 : 1 },
+      ]}
     >
-      <Icon name={icon} color={filled ? 'onPrimary' : 'onSurface'} size={filled ? 22 : 24} />
+      <Icon name={icon} color={muted ? 'onSurfaceVariant' : filled ? 'onPrimary' : color} size={compact ? 18 : filled ? 22 : 24} />
     </Pressable>
   );
 }
@@ -59,11 +67,11 @@ export function Screen({ title, start, end, children }: { title: string; start?:
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={-bottom} style={[styles.fill, { backgroundColor: colors.surface }]}>
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.fill}>
         <View style={styles.header}>
-          <View style={styles.slot}>{start}</View>
+          <View style={[styles.slot, styles.start]}>{start}</View>
           <AppText variant="title" accessibilityRole="header" numberOfLines={1} style={styles.title}>
             {title}
           </AppText>
-          <View style={styles.slot}>{end}</View>
+          <View style={[styles.slot, styles.end]}>{end}</View>
         </View>
         <View style={styles.body}>{children}</View>
       </SafeAreaView>
@@ -140,22 +148,24 @@ export function StateView(props: StateProps) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
-  slot: { width: touchTarget, alignItems: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', minHeight: headerHeight, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
+  slot: { width: touchTarget * 2, flexDirection: 'row' },
+  start: { justifyContent: 'flex-start' },
+  end: { justifyContent: 'flex-end' },
   title: { flex: 1, textAlign: 'center' },
   body: { flex: 1, width: '100%', maxWidth: readingWidth, alignSelf: 'center', paddingHorizontal: spacing.md, gap: spacing.md },
   iconButton: { width: touchTarget, height: touchTarget, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  compact: { width: control.compactButton, height: control.compactButton, margin: (touchTarget - control.compactButton) / 2 },
   button: {
     minHeight: touchTarget,
     minWidth: touchTarget,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  card: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderCurve: 'continuous', borderWidth: StyleSheet.hairlineWidth * 2 },
+  card: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth * 2 },
   state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.lg },
   center: { textAlign: 'center' },
 });

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added (chat)
+
+- Short chat titles written by a model (docs ADR 0036): after the first
+  answer the app asks `POST /api/chat/title` one time. Until the title
+  comes, or when the call fails, the title is the first line of the first
+  message, cut at a word to 40 characters. A rename always wins.
+- A chat menu in the header (three dots): Bookmark, Rename, Delete.
+  Bookmarked chats show in their own group at the top of the side menu.
+- A swipe to the left on a chat in the side menu shows Delete. TalkBack
+  has a Delete action on each chat.
+
+### Changed (chat)
+
+- The side menu has no New chat; it is in the chat header, which shows
+  it only when the chat has messages. Budget and Settings have a back
+  button to the chat.
+- The model chip shows only while the message field has focus, as a
+  compact pill. The send button is next to the field, 36 dp with a 48 dp
+  touch area. The field has no border.
+- The keyboard closes on a tap on the empty chat, on a drag of the list,
+  and when the menu or the model picker opens.
+- Corners as in Taseen: 8, 14 and full radius, no `borderCurve`. ESLint
+  rejects number literals for a radius and any `borderCurve`.
+
 ### Removed (tasks)
 
 - All task functions (docs ADR 0035): the Tasks screen, the task detail
@@ -13,6 +37,16 @@
 - 155 text keys that only the task screens used, the task flows of
   Maestro, and the Tasks store screenshot.
 
+### Added
+
+- `EXPO_PUBLIC_LOGIN=off` turns the login off for internal testing: no
+  login screen, no lock screen and no Sign out.
+
+### Fixed
+
+- In Expo Go, the login returns to Expo Go. Before, Android gave the login
+  redirect to the installed test version.
+
 ### Changed (chat only, new design)
 
 - The app is a chat with a model. The side menu has New chat, the list of
@@ -20,8 +54,11 @@
 - Answers are set in Literata, a reading serif, with no bubble. Your
   messages are in a blue tint bubble. New dependency
   `@expo-google-fonts/literata` 0.4.3 (font files only, four faces).
-- An empty chat shows the mark, "What do you want to know?" and three
-  starter lines that fill the message field.
+- An empty chat shows only the message field: no mark, no question and no
+  starter lines.
+- After a copy, the copy icon changes to a green check for 2 seconds. New
+  colour token `success`.
+- The copy and regenerate icons use the quiet `onSurfaceVariant` colour.
 - The header shows the title of the chat (its first message).
 - One pulsing dot shows while the first text of an answer has not come.
 - The composer has the model chip at the start and Send at the end.
