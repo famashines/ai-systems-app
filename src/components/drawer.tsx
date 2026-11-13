@@ -1,21 +1,92 @@
 import { router } from 'expo-router';
 import { useState, useSyncExternalStore } from 'react';
-import { Animated, I18nManager, Keyboard, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Animated, I18nManager, Keyboard, Modal, PanResponder, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText, Icon, IconButton, Mark, type IconName } from '@/components/ui';
 import type { Key } from '@/i18n';
-import { direct } from '@/lib/direct';
+import { direct, type ChatSummary } from '@/lib/direct';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
-import { drawerWidth, mark, motion, radius, spacing, touchTarget } from '@/theme';
+import { drawerWidth, headerHeight, mark, motion, radius, spacing, touchTarget } from '@/theme';
 
 type Section = '/budget' | '/settings';
+
+const swipeWidth = 80;
+const swipeSlop = 8;
+const swipeSpeed = 0.5;
 
 const sections: [Section, Key, IconName][] = [
   ['/budget', 'tabs.budget', { ios: 'dollarsign.circle', android: 'savings', web: 'savings' }],
   ['/settings', 'tabs.settings', { ios: 'gearshape', android: 'settings', web: 'settings' }],
 ];
+
+function Heading({ label }: { label: string }) {
+  return (
+    <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
+      {label}
+    </AppText>
+  );
+}
+
+function ChatRow({ item, selected, onOpen }: { item: ChatSummary; selected: boolean; onOpen: () => void }) {
+  const { t, colors } = useSettings();
+  const [x] = useState(() => new Animated.Value(0));
+  const [shown, setShown] = useState(false);
+  const [swipe] = useState(() => {
+    const toward = I18nManager.isRTL ? 1 : -1;
+    let open = false;
+    const settle = (next: boolean) => {
+      open = next;
+      setShown(next);
+      Animated.spring(x, { toValue: next ? toward * swipeWidth : 0, useNativeDriver: true, bounciness: 0 }).start();
+    };
+    const pulled = (dx: number) => Math.min(swipeWidth, Math.max(0, (open ? swipeWidth : 0) + dx * toward));
+    const responder = PanResponder.create({
+      onMoveShouldSetPanResponder: (_event, { dx, dy }) => Math.abs(dx) > swipeSlop && Math.abs(dx) > Math.abs(dy) * 2,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_event, { dx }) => x.setValue(pulled(dx) * toward),
+      onPanResponderRelease: (_event, { dx, vx }) => settle(pulled(dx) > swipeWidth / 2 || vx * toward > swipeSpeed),
+      onPanResponderTerminate: () => settle(open),
+    });
+    return { handlers: responder.panHandlers, settle, isOpen: () => open };
+  });
+  const remove = () => direct.remove(item.chatId);
+  const deleteLabel = t('drawer.chatDelete', { title: item.title });
+
+  return (
+    <View style={styles.chat}>
+      <Pressable
+        testID={`drawer-chat-delete-${item.chatId}`}
+        accessibilityRole="button"
+        accessibilityLabel={deleteLabel}
+        accessibilityElementsHidden={!shown}
+        importantForAccessibility={shown ? 'yes' : 'no-hide-descendants'}
+        onPress={remove}
+        style={[styles.swipeDelete, { backgroundColor: colors.error }]}
+      >
+        <Icon name={{ ios: 'trash', android: 'delete', web: 'delete' }} color="onError" />
+      </Pressable>
+      <Animated.View {...swipe.handlers} style={[styles.chatFace, { backgroundColor: selected ? colors.surfaceContainerHigh : colors.surface, transform: [{ translateX: x }] }]}>
+        <Pressable
+          testID={`drawer-chat-${item.chatId}`}
+          accessibilityRole="button"
+          accessibilityLabel={t('drawer.chat', { title: item.title })}
+          accessibilityState={{ selected }}
+          accessibilityActions={[{ name: 'delete', label: deleteLabel }]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'delete') remove();
+          }}
+          onPress={() => (swipe.isOpen() ? swipe.settle(false) : onOpen())}
+          android_ripple={{ color: colors.outlineVariant }}
+          style={styles.chatTitle}
+        >
+          <AppText numberOfLines={1}>{item.title}</AppText>
+        </Pressable>
+      </Animated.View>
+    </View>
+  );
+}
 
 export function Back() {
   const { t } = useSettings();
@@ -31,6 +102,10 @@ export function Menu() {
   if (open && locked) setOpen(false);
   const [progress] = useState(() => new Animated.Value(0));
   const side = I18nManager.isRTL ? 1 : -1;
+  const groups: [Key, ChatSummary[]][] = [
+    ['drawer.bookmarks', chat.history.filter((item) => item.bookmarked)],
+    ['drawer.chats', chat.history.filter((item) => !item.bookmarked)],
+  ];
 
   const show = () => {
     Keyboard.dismiss();
@@ -66,42 +141,33 @@ export function Menu() {
               </AppText>
               <IconButton icon={{ ios: 'xmark', android: 'close', web: 'close' }} label={t('drawer.close')} onPress={close} />
             </View>
-            <AppText variant="bodySmall" color="onSurfaceVariant" accessibilityRole="header" style={styles.heading}>
-              {t('drawer.chats')}
-            </AppText>
             <ScrollView style={styles.fill} contentContainerStyle={styles.block}>
               {chat.history.length === 0 ? (
-                <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.none}>
-                  {t('drawer.noChats')}
-                </AppText>
+                <>
+                  <Heading label={t('drawer.chats')} />
+                  <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.none}>
+                    {t('drawer.noChats')}
+                  </AppText>
+                </>
               ) : (
-                chat.history.map((item) => {
-                  const selected = item.chatId === chat.chatId;
-                  return (
-                    <View key={item.chatId} style={[styles.chat, { backgroundColor: selected ? colors.surfaceContainerHigh : 'transparent' }]}>
-                      <Pressable
-                        testID={`drawer-chat-${item.chatId}`}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('drawer.chat', { title: item.title })}
-                        accessibilityState={{ selected }}
-                        onPress={() => {
-                          void direct.open(item.chatId);
-                          go('/');
-                        }}
-                        android_ripple={{ color: colors.outlineVariant }}
-                        style={styles.chatTitle}
-                      >
-                        <AppText numberOfLines={1}>{item.title}</AppText>
-                      </Pressable>
-                      <IconButton
-                        testID={`drawer-chat-delete-${item.chatId}`}
-                        icon={{ ios: 'trash', android: 'delete', web: 'delete' }}
-                        label={t('drawer.chatDelete', { title: item.title })}
-                        onPress={() => direct.remove(item.chatId)}
-                      />
+                groups.map(([key, items]) =>
+                  items.length === 0 ? null : (
+                    <View key={key} style={styles.group}>
+                      <Heading label={t(key)} />
+                      {items.map((item) => (
+                        <ChatRow
+                          key={item.chatId}
+                          item={item}
+                          selected={item.chatId === chat.chatId}
+                          onOpen={() => {
+                            void direct.open(item.chatId);
+                            go('/');
+                          }}
+                        />
+                      ))}
                     </View>
-                  );
-                })
+                  ),
+                )
               )}
             </ScrollView>
             <View style={[styles.block, styles.foot, { borderColor: colors.outlineVariant }]}>
@@ -130,13 +196,16 @@ export function Menu() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   panel: { position: 'absolute', top: 0, bottom: 0, start: 0, width: drawerWidth, maxWidth: '85%', borderTopEndRadius: radius.md, borderBottomEndRadius: radius.md, overflow: 'hidden' },
-  top: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 56, paddingStart: spacing.md, paddingEnd: spacing.xs },
+  top: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: headerHeight, paddingStart: spacing.md, paddingEnd: spacing.xs },
   name: { flex: 1 },
   block: { paddingHorizontal: spacing.sm, gap: spacing.xs },
   foot: { paddingVertical: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth * 2 },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: touchTarget, paddingHorizontal: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
-  heading: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xs },
+  heading: { paddingHorizontal: spacing.md, paddingTop: spacing.lg, paddingBottom: spacing.xs },
   none: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  chat: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, overflow: 'hidden' },
-  chatTitle: { flex: 1, justifyContent: 'center', minHeight: touchTarget, paddingHorizontal: spacing.md },
+  group: { gap: spacing.xs },
+  chat: { borderRadius: radius.md, overflow: 'hidden' },
+  chatFace: { borderRadius: radius.md, overflow: 'hidden' },
+  chatTitle: { justifyContent: 'center', minHeight: touchTarget, paddingHorizontal: spacing.md },
+  swipeDelete: { position: 'absolute', top: 0, bottom: 0, end: 0, width: swipeWidth, alignItems: 'center', justifyContent: 'center' },
 });

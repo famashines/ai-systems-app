@@ -46,11 +46,13 @@ export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 } as const;
 
 export const radius = { md: 8, field: 14, full: 999 } as const;
 
-export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)' } as const;
+export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)', menu: '0 4px 16px rgba(0, 0, 0, 0.18)' } as const;
 
 export const motion = { fade: 160, open: 240, pulse: 900 } as const;
 
 export const touchTarget = 48;
+
+export const headerHeight = 56;
 
 export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
 

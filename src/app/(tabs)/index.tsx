@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentRef } from 'react';
 import { AccessibilityInfo, Animated, FlatList, Keyboard, LayoutAnimation, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { ChatMenu } from '@/components/chat-menu';
 import { Menu } from '@/components/drawer';
 import { CopyButton, Markdown } from '@/components/markdown';
 import { ModelPicker, useChoice } from '@/components/model-picker';
@@ -161,7 +162,8 @@ export default function Chat() {
   const needsModel = choice.model === undefined;
   const chipShown = focused || needsModel;
   const canSend = text.trim() !== '' && !needsModel && !chat.busy;
-  const title = chat.history.find((item) => item.chatId === chat.chatId)?.title ?? t('chat.newChat');
+  const summary = chat.history.find((item) => item.chatId === chat.chatId);
+  const title = summary?.title ?? t('chat.newChat');
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setStill);
@@ -192,7 +194,14 @@ export default function Chat() {
     <Screen
       title={title}
       start={<Menu />}
-      end={chat.messages.length > 0 ? <IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} onPress={startNew} /> : null}
+      end={
+        chat.messages.length > 0 ? (
+          <>
+            <IconButton icon={{ ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }} label={t('chat.newChat')} onPress={startNew} />
+            {summary ? <ChatMenu chat={summary} /> : null}
+          </>
+        ) : null
+      }
     >
       <Thread messages={chat.messages} />
       <View style={styles.composer}>

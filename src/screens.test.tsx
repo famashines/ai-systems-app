@@ -5,7 +5,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useLocales } from 'expo-localization';
 import { fetch as streamFetch } from 'expo/fetch';
 import type { ReactElement } from 'react';
-import { Clipboard, I18nManager, Keyboard, Text } from 'react-native';
+import { Alert, Clipboard, I18nManager, Keyboard, Text } from 'react-native';
 
 import Budget from '@/app/(tabs)/budget';
 import Chat from '@/app/(tabs)/index';
@@ -328,7 +328,8 @@ describe('App', () => {
       expect(await screen.findByText('First answer')).toBeOnTheScreen();
       expect(await getItem('direct.history')).not.toBeNull();
       await fireEvent.press(screen.getAllByTestId('menu')[0]!);
-      await fireEvent.press(await screen.findByRole('button', { name: 'Delete the chat First question' }));
+      expect(screen.queryByRole('button', { name: 'Delete the chat First question' })).toBeNull();
+      await fireEvent(await screen.findByRole('button', { name: 'Chat: First question' }), 'accessibilityAction', { nativeEvent: { actionName: 'delete' } });
       expect(screen.queryByRole('button', { name: 'Chat: First question' })).toBeNull();
       expect(screen.getAllByText('No chats yet.').length).toBeGreaterThan(0);
       expect(screen.queryByText('First answer')).toBeNull();
@@ -338,6 +339,45 @@ describe('App', () => {
       await waitFor(async () => expect((await getItem<unknown[]>('direct.history'))?.value).toHaveLength(1));
       await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
       await waitFor(async () => expect(await getItem('direct.history')).toBeNull());
+    });
+
+    it('bookmarks, renames and deletes the open chat from its menu', async () => {
+      const alert = jest.spyOn(Alert, 'alert');
+      await show(<Chat />);
+      await ready();
+      expect(screen.queryByRole('button', { name: 'More options' })).toBeNull();
+      await fireEvent.changeText(screen.getByLabelText('Message'), 'Plan a trip');
+      await fireEvent.press(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(chatFetch).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        push({ type: 'delta', text: 'Sure' });
+        push(done);
+        end();
+      });
+      await settle();
+      expect(screen.getByRole('header', { name: 'Plan a trip' })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'More options' }));
+      await fireEvent.press(screen.getByRole('menuitem', { name: 'Bookmark' }));
+      expect(screen.queryByTestId('chat-menu-panel')).toBeNull();
+      await fireEvent.press(screen.getByTestId('menu'));
+      expect(screen.getByRole('header', { name: 'Bookmarks' })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByTestId('drawer-scrim', { includeHiddenElements: true }));
+      await fireEvent.press(screen.getByRole('button', { name: 'More options' }));
+      expect(screen.getByRole('menuitem', { name: 'Remove bookmark' })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('menuitem', { name: 'Rename' }));
+      await fireEvent.changeText(screen.getByTestId('rename-input'), '   ');
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+      await fireEvent.changeText(screen.getByTestId('rename-input'), 'Trip to Lahore');
+      await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+      expect(screen.queryByTestId('rename-dialog')).toBeNull();
+      expect(screen.getByRole('header', { name: 'Trip to Lahore' })).toBeOnTheScreen();
+      await fireEvent.press(screen.getByRole('button', { name: 'More options' }));
+      await fireEvent.press(screen.getByRole('menuitem', { name: 'Delete' }));
+      expect(alert).toHaveBeenCalledWith('Delete this chat?', 'You cannot undo this.', expect.any(Array));
+      const buttons = alert.mock.calls[0]![2]!;
+      await act(async () => buttons.find((button) => button.style === 'destructive')!.onPress!());
+      expect(screen.getByRole('header', { name: 'New chat' })).toBeOnTheScreen();
+      expect(screen.queryByText('Sure')).toBeNull();
     });
 
     it('shows the reason when the budget refuses the message', async () => {

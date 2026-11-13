@@ -5,6 +5,7 @@ import * as auth from '@/lib/auth';
 import { config } from '@/lib/config';
 
 export const fetchTimeoutMs = 15_000;
+export const titleTimeoutMs = 30_000;
 export const sendAttempts = 4;
 export const messageTextMax = 20_000;
 export const modelsRetryMs = 2_000;
@@ -35,9 +36,9 @@ function retryAfter(header: string | null): number {
   return Number.isNaN(date) ? 1000 : Math.min(Math.max(date - Date.now(), 0), 60_000);
 }
 
-async function send(path: string, init: RequestInit, token: string): Promise<Response> {
+async function send(path: string, init: RequestInit, token: string, timeoutMs = fetchTimeoutMs): Promise<Response> {
   const controller = new AbortController();
-  const handle = setTimeout(() => controller.abort(), fetchTimeoutMs);
+  const handle = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(`${config.apiUrl}${path}`, {
       ...init,
@@ -62,9 +63,9 @@ async function token(renew: boolean): Promise<string> {
   return value;
 }
 
-async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> {
-  let response = await send(path, init, await token(false));
-  if (response.status === 401) response = await send(path, init, await token(true));
+async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>, timeoutMs = fetchTimeoutMs): Promise<T> {
+  let response = await send(path, init, await token(false), timeoutMs);
+  if (response.status === 401) response = await send(path, init, await token(true), timeoutMs);
   if (response.ok) {
     const body = schema.safeParse(await response.json().catch(() => null));
     if (!body.success) throw new ApiError('unavailable');
@@ -110,6 +111,13 @@ export async function listModels(waitMs = modelsRetryMs): Promise<ModelListItemV
     await sleep(waitMs);
     return once();
   }
+}
+
+const ChatTitleReply = z.object({ title: z.string().trim().min(1).max(60) });
+
+export async function chatTitle(chatId: string, messages: { role: 'user' | 'assistant'; content: string }[]): Promise<string> {
+  const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId, messages }) };
+  return (await request('/api/chat/title', init, ChatTitleReply, titleTimeoutMs)).title;
 }
 
 export async function getBudget(): Promise<BudgetMonthV1 | null> {

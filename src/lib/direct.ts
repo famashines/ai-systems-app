@@ -3,6 +3,7 @@ import * as Crypto from 'expo-crypto';
 import { fetch as streamFetch } from 'expo/fetch';
 import { z } from 'zod';
 
+import { chatTitle } from '@/lib/api';
 import * as auth from '@/lib/auth';
 import * as cache from '@/lib/cache';
 import { config } from '@/lib/config';
@@ -23,14 +24,18 @@ export type DirectMessage = {
   cut?: boolean;
 };
 export type Choice = { model?: string; effort?: ReasoningEffort };
-export type ChatSummary = { chatId: string; title: string; updatedAt: number };
+export type ChatSummary = { chatId: string; title: string; updatedAt: number; bookmarked?: boolean; titled?: 'model' | 'owner' };
+export type NameChat = (chatId: string, messages: { role: 'user' | 'assistant'; content: string }[]) => Promise<string>;
 export type DirectChat = { chatId: string | null; messages: DirectMessage[]; busy: boolean; history: ChatSummary[] };
 export type Storage = Pick<typeof cache, 'getItem' | 'setItem' | 'removeItem'>;
 
 export const historyKey = 'direct.history';
 export const historyMax = 50;
 export const titleMax = 80;
+export const autoTitleMax = 40;
+export const titleInputMax = 2000;
 const chatKey = (chatId: string) => `direct.chat.${chatId}`;
+const bookmarksFirst = (items: ChatSummary[]) => [...items.filter((item) => item.bookmarked), ...items.filter((item) => !item.bookmarked)];
 
 const StreamEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('delta'), text: z.string() }),
@@ -119,6 +124,14 @@ export async function streamChat(body: Body, signal: AbortSignal, onDelta: (text
   }
 }
 
+export function autoTitle(text: string): string {
+  const line = (text.trim().split('\n')[0] ?? '').replace(/\s+/g, ' ');
+  if (line.length <= autoTitleMax) return line;
+  const cut = line.slice(0, autoTitleMax);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > autoTitleMax / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:!?-]+$/, '')}…`;
+}
+
 export function history(messages: DirectMessage[]): Body['messages'] {
   return messages.filter((message) => message.text.trim() !== '' && (message.role === 'user' || message.state !== 'error')).map(({ role, text }) => ({ role, content: text }));
 }
@@ -130,11 +143,13 @@ export function createDirectStore(
   newId: () => string = () => Crypto.randomUUID(),
   now: () => number = Date.now,
   storage: Storage = cache,
+  nameChat: NameChat = chatTitle,
 ) {
   let state: DirectChat = { chatId: null, messages: [], busy: false, history: [] };
   let abort: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<Listener>();
+  const tried = new Set<string>();
 
   const emit = () => {
     if (timer) clearTimeout(timer);
@@ -154,7 +169,8 @@ export function createDirectStore(
     const { chatId, messages } = state;
     const first = messages.find((message) => message.role === 'user');
     if (!chatId || !first) return;
-    const history = [{ chatId, title: first.text.slice(0, titleMax), updatedAt: now() }, ...state.history.filter((item) => item.chatId !== chatId)];
+    const old = state.history.find((item) => item.chatId === chatId);
+    const history = bookmarksFirst([{ ...old, chatId, title: old?.title ?? autoTitle(first.text), updatedAt: now() }, ...state.history.filter((item) => item.chatId !== chatId)]);
     const dropped = history.slice(historyMax);
     set({ ...state, history: history.slice(0, historyMax) });
     void Promise.all([
@@ -162,6 +178,26 @@ export function createDirectStore(
       storage.setItem(historyKey, state.history),
       ...dropped.map((item) => storage.removeItem(chatKey(item.chatId))),
     ]).catch(() => {});
+  }
+
+  function edit(chatId: string, change: (item: ChatSummary) => ChatSummary) {
+    set({ ...state, history: bookmarksFirst(state.history.map((item) => (item.chatId === chatId ? change(item) : item))) });
+    void storage.setItem(historyKey, state.history).catch(() => {});
+  }
+
+  function name(chatId: string) {
+    const item = state.history.find((entry) => entry.chatId === chatId);
+    const question = state.messages.find((message) => message.role === 'user');
+    const reply = state.messages.find((message) => message.role === 'assistant' && message.state === 'done' && message.text.trim() !== '');
+    if (!item || item.titled || !question || tried.has(chatId)) return;
+    tried.add(chatId);
+    const messages = [{ role: 'user' as const, content: question.text.slice(0, titleInputMax) }, ...(reply ? [{ role: 'assistant' as const, content: reply.text.slice(0, titleInputMax) }] : [])];
+    void nameChat(chatId, messages)
+      .then((title) => {
+        const current = state.history.find((entry) => entry.chatId === chatId);
+        if (current && !current.titled) edit(chatId, (entry) => ({ ...entry, title: title.slice(0, titleMax), titled: 'model' }));
+      })
+      .catch(() => {});
   }
 
   async function answer(choice: Choice) {
@@ -187,6 +223,7 @@ export function createDirectStore(
           : { ...message, state: 'error', error: outcome.error, ...(outcome.costMicroUsd ? { costMicroUsd: outcome.costMicroUsd } : {}) },
     );
     save();
+    if (outcome.state === 'done' && !stopped) name(chatId);
   }
 
   return {
@@ -238,6 +275,13 @@ export function createDirectStore(
       }
       set({ ...state, history: state.history.filter((item) => item.chatId !== chatId) });
       void Promise.all([storage.removeItem(chatKey(chatId)), storage.setItem(historyKey, state.history)]).catch(() => {});
+    },
+    rename(chatId: string, title: string) {
+      const trimmed = title.trim().slice(0, titleMax);
+      if (trimmed) edit(chatId, (item) => ({ ...item, title: trimmed, titled: 'owner' }));
+    },
+    bookmark(chatId: string) {
+      edit(chatId, (item) => ({ ...item, bookmarked: !item.bookmarked }));
     },
     forget() {
       const old = state.history;

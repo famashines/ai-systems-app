@@ -105,5 +105,17 @@
   "drawer.chats": "Chats",
   "drawer.noChats": "Noch keine Chats.",
   "drawer.chat": "Chat: {title}",
-  "drawer.chatDelete": "Chat {title} löschen"
+  "drawer.chatDelete": "Chat {title} löschen",
+  "common.cancel": "Abbrechen",
+  "common.save": "Speichern",
+  "chat.more": "Weitere Optionen",
+  "chat.bookmark": "Lesezeichen setzen",
+  "chat.unbookmark": "Lesezeichen entfernen",
+  "chat.rename": "Umbenennen",
+  "chat.delete": "Löschen",
+  "chat.renameTitle": "Chat umbenennen",
+  "chat.renameLabel": "Name des Chats",
+  "chat.deleteTitle": "Diesen Chat löschen?",
+  "chat.deleteBody": "Das lässt sich nicht rückgängig machen.",
+  "drawer.bookmarks": "Lesezeichen"
 }

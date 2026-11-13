@@ -4,7 +4,7 @@ import { ActivityIndicator, Image, KeyboardAvoidingView, Pressable, StyleSheet, 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSettings } from '@/state/settings';
-import { radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
+import { headerHeight, radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
 
 export function AppText({ variant = 'body', color = 'onSurface', style, ...props }: TextProps & { variant?: keyof typeof type; color?: keyof Colors }) {
   const { colors } = useSettings();
@@ -67,11 +67,11 @@ export function Screen({ title, start, end, children }: { title: string; start?:
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={-bottom} style={[styles.fill, { backgroundColor: colors.surface }]}>
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.fill}>
         <View style={styles.header}>
-          <View style={styles.slot}>{start}</View>
+          <View style={[styles.slot, styles.start]}>{start}</View>
           <AppText variant="title" accessibilityRole="header" numberOfLines={1} style={styles.title}>
             {title}
           </AppText>
-          <View style={styles.slot}>{end}</View>
+          <View style={[styles.slot, styles.end]}>{end}</View>
         </View>
         <View style={styles.body}>{children}</View>
       </SafeAreaView>
@@ -150,8 +150,10 @@ const compactButton = 36;
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', minHeight: 56, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
-  slot: { width: touchTarget, alignItems: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', minHeight: headerHeight, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
+  slot: { width: touchTarget * 2, flexDirection: 'row' },
+  start: { justifyContent: 'flex-start' },
+  end: { justifyContent: 'flex-end' },
   title: { flex: 1, textAlign: 'center' },
   body: { flex: 1, width: '100%', maxWidth: readingWidth, alignSelf: 'center', paddingHorizontal: spacing.md, gap: spacing.md },
   iconButton: { width: touchTarget, height: touchTarget, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },

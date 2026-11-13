@@ -105,5 +105,17 @@
   "drawer.chats": "چیٹس",
   "drawer.noChats": "ابھی کوئی چیٹ نہیں۔",
   "drawer.chat": "چیٹ: {title}",
-  "drawer.chatDelete": "چیٹ {title} حذف کریں"
+  "drawer.chatDelete": "چیٹ {title} حذف کریں",
+  "common.cancel": "منسوخ کریں",
+  "common.save": "محفوظ کریں",
+  "chat.more": "مزید اختیارات",
+  "chat.bookmark": "بک مارک کریں",
+  "chat.unbookmark": "بک مارک ہٹائیں",
+  "chat.rename": "نام بدلیں",
+  "chat.delete": "حذف کریں",
+  "chat.renameTitle": "چیٹ کا نام بدلیں",
+  "chat.renameLabel": "چیٹ کا نام",
+  "chat.deleteTitle": "یہ چیٹ حذف کریں؟",
+  "chat.deleteBody": "آپ اسے واپس نہیں لا سکتے۔",
+  "drawer.bookmarks": "بک مارکس"
 }
