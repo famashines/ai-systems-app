@@ -57,9 +57,13 @@ jobs:
 
       - name: Verify Expo dependencies
         run: npx expo install --check
+        env:
+          EXPO_OFFLINE: "1"
 
       - name: Verify Expo project
         run: npx --yes expo-doctor@1.20.4
+        env:
+          EXPO_OFFLINE: "1"
 
       - name: Export Android bundle
         run: npx expo export --platform android --output-dir dist/android
