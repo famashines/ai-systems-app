@@ -1,6 +1,6 @@
 import { fetch as streamFetch } from 'expo/fetch';
 
-import type { ServerChat, ServerMessage } from '@/lib/api';
+import { ApiError, type ServerChat, type ServerMessage } from '@/lib/api';
 import * as auth from '@/lib/auth';
 import { autoTitle, createDirectStore, history, historyMax, parseEvents, pendingKey, statusError, streamChat, type ChatChange, type DirectMessage } from '@/lib/direct';
 
@@ -138,6 +138,7 @@ describe('the store', () => {
       new Promise<string>((resolve, reject) => names.push({ chatId, messages, done: (title) => (title instanceof Error ? reject(title) : resolve(title)) }));
     const server = {
       offline: false,
+      refuse: false,
       items: [] as ServerChat[],
       pages: new Map<string, ServerMessage[]>(),
       sent: [] as [string, string, ChatChange?][],
@@ -146,7 +147,11 @@ describe('the store', () => {
     const remote = {
       list: () => online().then(() => server.items),
       messages: (chatId: string) => online().then(() => server.pages.get(chatId) ?? []),
-      change: (chatId: string, change: ChatChange) => online().then(() => void server.sent.push(['change', chatId, change])),
+      change: (chatId: string, change: ChatChange) =>
+        online().then(() => {
+          if (server.refuse) throw new ApiError('rejected', 0, undefined, 400);
+          server.sent.push(['change', chatId, change]);
+        }),
       remove: (chatId: string) => online().then(() => void server.sent.push(['remove', chatId])),
     };
     const make = () =>
@@ -464,6 +469,40 @@ describe('the store', () => {
     server.items = [serverChat('remote-2', 6, { title: 'Renamed', titled: 'owner', bookmarked: true })];
     await store.load();
     expect(store.get().history).toMatchObject([{ chatId: 'remote-2', title: 'Renamed', bookmarked: true }]);
+  });
+
+  it('keeps a rename and a bookmark of the phone the first time the chat is on the server, and sends them', async () => {
+    const { store, calls, server } = setup();
+    store.send('Old chat', choice);
+    calls[0]!.end({ state: 'done', costMicroUsd: 1, cut: false });
+    await flush();
+    const chatId = store.get().chatId!;
+    store.rename(chatId, 'My name');
+    store.bookmark(chatId);
+    await flush();
+    server.sent.length = 0;
+    server.items = [serverChat(chatId, 9, { title: 'Model title', titled: 'model' })];
+    await store.load();
+    await flush();
+    expect(store.get().history[0]).toMatchObject({ chatId, title: 'My name', titled: 'owner', bookmarked: true, synced: true });
+    expect(server.sent).toEqual([['change', chatId, { title: 'My name', bookmarked: true }]]);
+    server.items = [serverChat(chatId, 9, { title: 'Other device', titled: 'owner' })];
+    await store.load();
+    expect(store.get().history[0]).toMatchObject({ title: 'Other device', bookmarked: false });
+  });
+
+  it('drops a queued change that the server refuses, so later deletes still go out', async () => {
+    const { store, server } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6)];
+    await store.load();
+    server.offline = true;
+    store.rename('remote-1', 'Name');
+    store.remove('remote-2');
+    await flush();
+    server.offline = false;
+    server.refuse = true;
+    await store.load();
+    expect(server.sent).toEqual([['remove', 'remote-2']]);
   });
 
   it('sign-out keeps only the deletes that wait for the server', async () => {

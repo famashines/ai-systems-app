@@ -3,7 +3,7 @@ import * as Crypto from 'expo-crypto';
 import { fetch as streamFetch } from 'expo/fetch';
 import { z } from 'zod';
 
-import { changeChat, chatListMax, chatMessages, chatTitle, deleteChat, listChats, type ServerChat, type ServerMessage } from '@/lib/api';
+import { ApiError, changeChat, chatListMax, chatMessages, chatTitle, deleteChat, listChats, type ServerChat, type ServerMessage } from '@/lib/api';
 import * as auth from '@/lib/auth';
 import * as cache from '@/lib/cache';
 import { config } from '@/lib/config';
@@ -202,8 +202,8 @@ export function createDirectStore(
       const op = pending[0];
       try {
         await (op.kind === 'delete' ? server.remove(op.chatId) : server.change(op.chatId, op.change));
-      } catch {
-        return false;
+      } catch (error) {
+        if (!(error instanceof ApiError && error.kind === 'rejected')) return false;
       }
       pending = pending.slice(1);
       await storage.setItem(pendingKey, pending).catch(() => {});
@@ -231,9 +231,17 @@ export function createDirectStore(
     const seen = new Set(remoteItems.map((item) => item.chatId));
     const oldest = remoteItems.length > 0 ? Math.min(...remoteItems.map((item) => Date.parse(item.updatedAt))) : Number.POSITIVE_INFINITY;
     const complete = remoteItems.length < chatListMax;
+    const changes: Pending[] = [];
     const fromServer = remoteItems.map((item): ChatSummary => {
       const mine = local.get(item.chatId);
       const updatedAt = Math.max(Date.parse(item.updatedAt), mine?.updatedAt ?? 0);
+      if (mine && !mine.synced) {
+        const renamed = mine.titled === 'owner' && mine.title !== item.title;
+        const bookmarked = !!mine.bookmarked && !item.bookmarked;
+        if (renamed || bookmarked) changes.push({ kind: 'change', chatId: item.chatId, change: { ...(renamed ? { title: mine.title } : {}), ...(bookmarked ? { bookmarked: true } : {}) } });
+        const titled = mine.titled === 'owner' ? 'owner' : item.titled;
+        return { chatId: item.chatId, title: mine.titled === 'owner' ? mine.title : (item.title ?? mine.title), updatedAt, bookmarked: item.bookmarked || !!mine.bookmarked, ...(titled ? { titled } : {}), synced: true };
+      }
       return { chatId: item.chatId, title: item.title ?? mine?.title ?? '', updatedAt, bookmarked: item.bookmarked, ...(item.titled ? { titled: item.titled } : {}), synced: true };
     });
     const kept = state.history.filter((item) => !seen.has(item.chatId) && !(item.synced && (complete || item.updatedAt >= oldest)));
@@ -246,6 +254,7 @@ export function createDirectStore(
     }
     set({ ...state, history: all });
     void Promise.all([storage.setItem(historyKey, state.history), ...dropped.map((item) => storage.removeItem(chatKey(item.chatId)))]).catch(() => {});
+    for (const change of changes) enqueue(change);
   }
 
   async function fetchMessages(chatId: string): Promise<DirectMessage[] | null> {

@@ -32,8 +32,8 @@ a cache. The chats are also kept on the server (next section).
 | A deleted chat: its id, the id of your account and the time of the delete, with no text | The same database | It stays, so that a late save of the chat does not bring it back. It has no text of the chat |
 
 - The server saves a chat after each answer. Chats that were on the
-  device before 2026-11-14 go to the server only when you send the next
-  message in them.
+  device before this update go to the server only when you send the
+  next message in them.
 - A delete in the app deletes the chat and all its messages on the server
   at once. The database has no backup, so no copy stays. If the device is
   offline, the app sends the delete when it is online again.
