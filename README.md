@@ -53,7 +53,14 @@ release scripts (docs/release.md, section 4).
 The client id is `ai-systems-app`. The redirect URI is
 `com.famashines.ai:/oauth2redirect`, a private-use scheme in reverse-domain
 form (RFC 8252). The Keycloak client must have the same redirect URI. The
-app scheme is `com.famashines.ai`. `EXPO_PUBLIC_*` values go into the
+app scheme is `com.famashines.ai`.
+
+In Expo Go, the redirect URI is the Expo Go address of Metro, for example
+`exp://192.168.1.20:8081/--/oauth2redirect`, so that the login returns to
+Expo Go and not to an installed build. Add this address to the valid
+redirect URIs of the Keycloak client for each computer and port that you
+use. Development and release builds still use
+`com.famashines.ai:/oauth2redirect`. `EXPO_PUBLIC_*` values go into the
 bundle. Do not put a secret in them.
 
 The app accepts a discovery document only when its `issuer` is the

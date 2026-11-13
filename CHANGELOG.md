@@ -13,6 +13,11 @@
 - 155 text keys that only the task screens used, the task flows of
   Maestro, and the Tasks store screenshot.
 
+### Fixed
+
+- In Expo Go, the login returns to Expo Go. Before, Android gave the login
+  redirect to the installed test version.
+
 ### Changed (chat only, new design)
 
 - The app is a chat with a model. The side menu has New chat, the list of

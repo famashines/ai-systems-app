@@ -616,5 +616,7 @@ describe('StateView', () => {
 it('sends the login redirect to the start route, not to a missing screen', () => {
   expect(redirectSystemPath({ path: 'com.famashines.ai:/oauth2redirect?code=x&state=y', initial: false })).toBe('/');
   expect(redirectSystemPath({ path: '/oauth2redirect?code=x', initial: false })).toBe('/');
+  expect(redirectSystemPath({ path: 'exp://192.168.1.20:8081/--/oauth2redirect?code=x', initial: false })).toBe('/');
+  expect(redirectSystemPath({ path: '/--/oauth2redirect?code=x', initial: false })).toBe('/');
   expect(redirectSystemPath({ path: '/settings', initial: false })).toBe('/settings');
 });

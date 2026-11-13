@@ -1,3 +1,5 @@
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Linking from 'expo-linking';
 import * as AuthSession from 'expo-auth-session';
 import * as SecureStore from 'expo-secure-store';
 
@@ -122,9 +124,10 @@ async function clear(): Promise<void> {
 export async function signIn(): Promise<boolean> {
   const started = generation;
   const doc = await discover();
+  const redirectUri = Constants.executionEnvironment === ExecutionEnvironment.StoreClient ? Linking.createURL('oauth2redirect') : config.redirectUri;
   const request = new AuthSession.AuthRequest({
     clientId: config.oidcClientId,
-    redirectUri: config.redirectUri,
+    redirectUri,
     scopes: ['openid', 'offline_access'],
     usePKCE: true,
   });
@@ -135,7 +138,7 @@ export async function signIn(): Promise<boolean> {
     AuthSession.exchangeCodeAsync(
       {
         clientId: config.oidcClientId,
-        redirectUri: config.redirectUri,
+        redirectUri,
         code: result.params.code ?? '',
         extraParams: { code_verifier: request.codeVerifier },
       },
