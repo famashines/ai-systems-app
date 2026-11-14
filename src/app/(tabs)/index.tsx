@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   thinking: { height: touchTarget / 2, justifyContent: 'center' },
   dot: { width: mark.thinking, height: mark.thinking, borderRadius: radius.full },
   latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },
-  composer: { gap: spacing.sm, paddingBottom: spacing.sm },
+  composer: { gap: spacing.sm, paddingBottom: spacing.md },
   bar: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.xs, padding: spacing.sm, borderRadius: radius.field, boxShadow: shadow.composer },
   input: { minHeight: touchTarget, maxHeight: 160, paddingHorizontal: spacing.sm, paddingVertical: (touchTarget - type.body.lineHeight) / 2, textAlign: 'auto', textAlignVertical: 'top' },
 });
