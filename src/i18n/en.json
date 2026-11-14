@@ -117,5 +117,7 @@
   "chat.renameLabel": "Chat name",
   "chat.deleteTitle": "Delete this chat?",
   "chat.deleteBody": "You cannot undo this.",
-  "drawer.bookmarks": "Bookmarks"
+  "drawer.bookmarks": "Bookmarks",
+  "chat.today": "Today",
+  "chat.yesterday": "Yesterday"
 }

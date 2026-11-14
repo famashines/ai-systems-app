@@ -54,7 +54,7 @@ export const touchTarget = 48;
 
 export const headerHeight = 56;
 
-export const control = { chip: 32, compactButton: 36, dot: 3, menuMin: 220, menuMax: 280 } as const;
+export const control = { chip: 32, compactButton: 36, quietButton: 28, dot: 3, menuMin: 220, menuMax: 280 } as const;
 
 export const rail = { node: 13, nodeOn: 17, edge: 4 } as const;
 
@@ -79,6 +79,7 @@ export const type = {
   label: { fontSize: 14, lineHeight: 20, fontWeight: '500', letterSpacing: 0.1 },
   body: { fontSize: 16, lineHeight: 26, fontWeight: '400' },
   bodySmall: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
+  meta: { fontSize: 12, lineHeight: 16, fontWeight: '400', letterSpacing: 0.2, fontVariant: ['tabular-nums'] },
   code: { fontSize: 14, lineHeight: 21, fontWeight: '400', fontFamily: 'monospace' },
   answer: { fontSize: 17, lineHeight: 28, fontFamily: fonts.serif },
   answerHead1: { fontSize: 24, lineHeight: 32, fontFamily: fonts.serifBold },

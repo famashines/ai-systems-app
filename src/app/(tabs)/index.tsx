@@ -6,7 +6,7 @@ import { Menu } from '@/components/drawer';
 import { CopyButton, Markdown } from '@/components/markdown';
 import { ModelPicker, useChoice } from '@/components/model-picker';
 import { AppText, IconButton, Screen } from '@/components/ui';
-import type { Key } from '@/i18n';
+import { formatDay, formatTime, type Key } from '@/i18n';
 import { messageTextMax } from '@/lib/api';
 import { direct, type DirectError, type DirectMessage } from '@/lib/direct';
 import { formatUsd } from '@/lib/money';
@@ -52,18 +52,40 @@ function Thinking() {
   );
 }
 
-function Message({ message, last }: { message: DirectMessage; last: boolean }) {
+function Day({ at }: { at: string }) {
+  const { language } = useSettings();
+  return (
+    <AppText variant="meta" color="onSurfaceVariant" accessibilityRole="header" style={styles.day}>
+      {formatDay(language, at)}
+    </AppText>
+  );
+}
+
+function Meta({ items, label }: { items: string[]; label?: string }) {
+  return (
+    <AppText variant="meta" color="onSurfaceVariant" accessibilityLabel={label} style={styles.metaText}>
+      {items.join('  ·  ')}
+    </AppText>
+  );
+}
+
+function Message({ message, last, day }: { message: DirectMessage; last: boolean; day: boolean }) {
   const { t, colors, language } = useSettings();
   const choice = useChoice();
+  const time = formatTime(language, message.createdAt);
   if (message.role === 'user') {
     return (
       <View testID={`direct-${message.id}`} style={styles.mine}>
+        {day ? <Day at={message.createdAt} /> : null}
         <View accessible accessibilityLabel={t('chat.you', { text: message.text })} style={[styles.bubble, { backgroundColor: colors.primaryContainer }]}>
           <AppText selectable color="onPrimaryContainer">
             {message.text}
           </AppText>
         </View>
-        <CopyButton text={message.text} label={t('chat.copy')} />
+        <View style={styles.meta}>
+          <Meta items={[time]} />
+          <CopyButton quiet text={message.text} label={t('chat.copy')} />
+        </View>
       </View>
     );
   }
@@ -71,6 +93,7 @@ function Message({ message, last }: { message: DirectMessage; last: boolean }) {
   const again = last && !streaming && choice.model !== undefined;
   return (
     <View testID={`direct-${message.id}`} style={styles.answer}>
+      {day ? <Day at={message.createdAt} /> : null}
       {message.text ? (
         <View accessibilityLabel={streaming ? undefined : t('chat.answer', { text: message.text })}>
           <Markdown text={message.text} />
@@ -93,21 +116,22 @@ function Message({ message, last }: { message: DirectMessage; last: boolean }) {
         </AppText>
       ) : null}
       {streaming ? null : (
-        <View style={styles.actions}>
-          {message.text ? <CopyButton testID="copy-answer" text={message.text} label={t('chat.copy')} /> : null}
+        <View style={styles.meta}>
+          {message.text ? <CopyButton quiet testID="copy-answer" text={message.text} label={t('chat.copy')} /> : null}
           {again ? (
             <IconButton
               testID="regenerate"
               icon={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }}
               label={t('chat.regenerate')}
               color="onSurfaceVariant"
+              quiet
               onPress={() => direct.regenerate(choice)}
             />
           ) : null}
-          {message.costMicroUsd === undefined ? null : (
-            <AppText variant="bodySmall" color="onSurfaceVariant" style={styles.cost}>
-              {t('chat.cost', { cost: formatUsd(language, message.costMicroUsd) })}
-            </AppText>
+          {message.costMicroUsd === undefined ? (
+            <Meta items={[time]} />
+          ) : (
+            <Meta items={[time, formatUsd(language, message.costMicroUsd)]} label={`${time}, ${t('chat.cost', { cost: formatUsd(language, message.costMicroUsd) })}`} />
           )}
         </View>
       )}
@@ -130,7 +154,7 @@ function Thread({ messages }: { messages: DirectMessage[] }) {
         accessibilityLabel={t('chat.messages')}
         data={newestFirst}
         keyExtractor={(message) => message.id}
-        renderItem={({ item, index }) => <Message message={item} last={index === 0} />}
+        renderItem={({ item, index }) => <Message message={item} last={index === 0} day={new Date(newestFirst[index + 1]?.createdAt ?? 0).toDateString() !== new Date(item.createdAt).toDateString()} />}
         onScroll={(event) => setAway(event.nativeEvent.contentOffset.y > awayOffset)}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -249,8 +273,9 @@ const styles = StyleSheet.create({
   mine: { alignItems: 'flex-end' },
   bubble: { maxWidth: '85%', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + spacing.xs, borderRadius: radius.md },
   answer: { gap: spacing.sm, alignSelf: 'stretch' },
-  actions: { flexDirection: 'row', alignItems: 'center', marginStart: -spacing.sm - spacing.xs },
-  cost: { marginStart: spacing.sm },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: -spacing.xs, marginHorizontal: -spacing.xs },
+  metaText: { paddingHorizontal: spacing.xs },
+  day: { alignSelf: 'center', paddingVertical: spacing.sm },
   thinking: { height: touchTarget / 2, justifyContent: 'center' },
   dot: { width: mark.thinking, height: mark.thinking, borderRadius: radius.full },
   latest: { position: 'absolute', alignSelf: 'center', bottom: spacing.sm },

@@ -117,5 +117,7 @@
   "chat.renameLabel": "چیٹ کا نام",
   "chat.deleteTitle": "یہ چیٹ حذف کریں؟",
   "chat.deleteBody": "آپ اسے واپس نہیں لا سکتے۔",
-  "drawer.bookmarks": "بک مارکس"
+  "drawer.bookmarks": "بک مارکس",
+  "chat.today": "آج",
+  "chat.yesterday": "کل"
 }

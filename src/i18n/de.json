@@ -117,5 +117,7 @@
   "chat.renameLabel": "Name des Chats",
   "chat.deleteTitle": "Diesen Chat löschen?",
   "chat.deleteBody": "Das lässt sich nicht rückgängig machen.",
-  "drawer.bookmarks": "Lesezeichen"
+  "drawer.bookmarks": "Lesezeichen",
+  "chat.today": "Heute",
+  "chat.yesterday": "Gestern"
 }

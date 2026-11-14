@@ -1,4 +1,5 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import light from 'expo-symbols/androidWeights/light';
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Image, KeyboardAvoidingView, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,9 +19,9 @@ export function Mark({ size }: { size: number }) {
 
 export type IconName = Extract<SymbolViewProps['name'], object>;
 
-export function Icon({ name, color = 'onSurface', size = 24 }: { name: IconName; color?: keyof Colors; size?: number }) {
+export function Icon({ name, color = 'onSurface', size = 24, thin = false }: { name: IconName; color?: keyof Colors; size?: number; thin?: boolean }) {
   const { colors } = useSettings();
-  return <SymbolView name={name} tintColor={colors[color]} size={size} />;
+  return <SymbolView name={name} tintColor={colors[color]} size={size} weight={thin ? { ios: 'light', android: light } : undefined} />;
 }
 
 type IconButtonProps = {
@@ -30,12 +31,13 @@ type IconButtonProps = {
   disabled?: boolean;
   filled?: boolean;
   compact?: boolean;
+  quiet?: boolean;
   color?: keyof Colors;
   testID?: string;
   accessibilityHint?: string;
 };
 
-export function IconButton({ icon, label, onPress, disabled = false, filled = false, compact = false, color = 'onSurface', testID, accessibilityHint }: IconButtonProps) {
+export function IconButton({ icon, label, onPress, disabled = false, filled = false, compact = false, quiet = false, color = 'onSurface', testID, accessibilityHint }: IconButtonProps) {
   const { colors } = useSettings();
   const muted = filled && disabled;
   return (
@@ -47,15 +49,16 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      hitSlop={compact ? (touchTarget - control.compactButton) / 2 : undefined}
+      hitSlop={quiet ? (touchTarget - control.quietButton) / 2 : compact ? (touchTarget - control.compactButton) / 2 : undefined}
       android_ripple={{ color: colors.outlineVariant, borderless: !filled }}
       style={({ pressed }) => [
         styles.iconButton,
         compact && styles.compact,
+        quiet && styles.quiet,
         { backgroundColor: muted ? colors.surfaceContainerHigh : filled ? colors.primary : 'transparent', opacity: muted ? 1 : disabled ? 0.38 : pressed ? 0.7 : 1 },
       ]}
     >
-      <Icon name={icon} color={muted ? 'onSurfaceVariant' : filled ? 'onPrimary' : color} size={compact ? 18 : filled ? 22 : 24} />
+      <Icon name={icon} color={muted ? 'onSurfaceVariant' : filled ? 'onPrimary' : color} size={quiet ? 16 : compact ? 18 : filled ? 22 : 24} thin={quiet} />
     </Pressable>
   );
 }
@@ -156,6 +159,7 @@ const styles = StyleSheet.create({
   body: { flex: 1, width: '100%', maxWidth: readingWidth, alignSelf: 'center', paddingHorizontal: spacing.md, gap: spacing.md },
   iconButton: { width: touchTarget, height: touchTarget, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   compact: { width: control.compactButton, height: control.compactButton, margin: (touchTarget - control.compactButton) / 2 },
+  quiet: { width: control.quietButton, height: control.quietButton },
   button: {
     minHeight: touchTarget,
     minWidth: touchTarget,
