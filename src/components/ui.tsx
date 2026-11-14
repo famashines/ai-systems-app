@@ -1,11 +1,23 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import light from 'expo-symbols/androidWeights/light';
-import type { ReactNode } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View, type TextProps } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSettings } from '@/state/settings';
 import { control, headerHeight, radius, readingWidth, spacing, touchTarget, type, type Colors } from '@/theme';
+
+const pressDim = Platform.OS !== 'android';
+
+export function useStill(): boolean {
+  const [still, setStill] = useState(false);
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setStill);
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setStill);
+    return () => sub.remove();
+  }, []);
+  return still;
+}
 
 export function AppText({ variant = 'body', color = 'onSurface', style, ...props }: TextProps & { variant?: keyof typeof type; color?: keyof Colors }) {
   const { colors } = useSettings();
@@ -55,7 +67,7 @@ export function IconButton({ icon, label, onPress, disabled = false, filled = fa
         styles.iconButton,
         compact && styles.compact,
         quiet && styles.quiet,
-        { backgroundColor: muted ? colors.surfaceContainerHigh : filled ? colors.primary : 'transparent', opacity: muted ? 1 : disabled ? 0.38 : pressed ? 0.7 : 1 },
+        { backgroundColor: muted ? colors.surfaceContainerHigh : filled ? colors.primary : 'transparent', opacity: muted ? 1 : disabled ? 0.38 : pressed && pressDim ? 0.7 : 1 },
       ]}
     >
       <Icon name={icon} color={muted ? 'onSurfaceVariant' : filled ? 'onPrimary' : color} size={quiet ? 16 : compact ? 18 : filled ? 22 : 24} thin={quiet} />
@@ -108,7 +120,7 @@ export function Button({ label, onPress, variant = 'filled', disabled = false, b
       style={({ pressed }) => [
         styles.button,
         filled ? { backgroundColor: colors.primary } : { borderWidth: StyleSheet.hairlineWidth * 2, borderColor: colors.outline },
-        { opacity: disabled ? 0.38 : pressed ? 0.8 : 1 },
+        { opacity: disabled ? 0.38 : pressed && pressDim ? 0.8 : 1 },
       ]}
     >
       {busy ? <ActivityIndicator color={ink} /> : <Text style={[type.label, { color: ink }]}>{label}</Text>}

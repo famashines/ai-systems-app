@@ -363,7 +363,7 @@ describe('App', () => {
       expect(screen.getByRole('header', { name: 'Plan a trip' })).toBeOnTheScreen();
       await fireEvent.press(screen.getByRole('button', { name: 'More options' }));
       await fireEvent.press(screen.getByRole('menuitem', { name: 'Bookmark' }));
-      expect(screen.queryByTestId('chat-menu-panel')).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId('chat-menu-panel')).toBeNull());
       await fireEvent.press(screen.getByTestId('menu'));
       expect(screen.getByRole('header', { name: 'Bookmarks' })).toBeOnTheScreen();
       await fireEvent.press(screen.getByTestId('drawer-scrim', { includeHiddenElements: true }));
@@ -428,7 +428,7 @@ describe('App', () => {
       expect(screen.getByRole('radio', { name: 'High' })).toBeChecked();
       await fireEvent.press(screen.getByRole('radio', { name: 'Low' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Done' }));
-      expect(screen.queryByTestId('model-panel')).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId('model-panel')).toBeNull());
       expect(screen.queryByTestId('model-chip')).toBeNull();
       await fireEvent(screen.getByLabelText('Message'), 'focus');
       expect(screen.getByTestId('model-chip')).toHaveProp('accessibilityLabel', 'Model Anthropic: Claude Opus 5.5, effort Low');
@@ -516,13 +516,13 @@ describe('App', () => {
       expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
       expect(screen.getByText('No chats yet.')).toBeOnTheScreen();
       await fireEvent.press(screen.getByTestId('drawer-scrim', { includeHiddenElements: true }));
-      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId('drawer-panel')).toBeNull());
       await fireEvent.press(menu);
       await fireEvent.press(screen.getByRole('button', { name: 'Close the menu' }));
-      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId('drawer-panel')).toBeNull());
       await fireEvent.press(menu);
       await fireEvent(screen.getByTestId('drawer'), 'requestClose');
-      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId('drawer-panel')).toBeNull());
       expect(router.navigate).not.toHaveBeenCalled();
     });
 
@@ -532,7 +532,7 @@ describe('App', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Open the menu' }));
       await fireEvent.press(screen.getByRole('button', { name: 'Settings' }));
       expect(router.navigate).toHaveBeenLastCalledWith('/settings');
-      expect(screen.queryByTestId('drawer-panel')).toBeNull();
+      await waitFor(() => expect(screen.queryByTestId('drawer-panel')).toBeNull());
       await screen.unmount();
       await show(<Budget />);
       expect(screen.queryByRole('button', { name: 'Open the menu' })).toBeNull();

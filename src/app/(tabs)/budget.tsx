@@ -159,5 +159,5 @@ const styles = StyleSheet.create({
   warning: { padding: spacing.md, borderRadius: radius.md, overflow: 'hidden' },
   form: { gap: spacing.md },
   field: { gap: spacing.xs },
-  input: { minHeight: touchTarget, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.md, textAlign: 'auto' },
+  input: { minHeight: touchTarget, borderWidth: StyleSheet.hairlineWidth * 2, borderRadius: radius.field, paddingHorizontal: spacing.md, textAlign: 'auto' },
 });

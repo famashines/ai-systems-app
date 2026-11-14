@@ -1,11 +1,11 @@
 import { useRef, useState, type ComponentRef } from 'react';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Animated, I18nManager, Keyboard, KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppText, Button, Icon, IconButton, type IconName } from '@/components/ui';
+import { AppText, Button, Icon, IconButton, useStill, type IconName } from '@/components/ui';
 import { direct, titleMax, type ChatSummary } from '@/lib/direct';
 import { useSettings } from '@/state/settings';
-import { control, headerHeight, radius, readingWidth, shadow, spacing, touchTarget, type } from '@/theme';
+import { control, ease, headerHeight, motion, radius, readingWidth, shadow, spacing, touchTarget, type } from '@/theme';
 
 function Item({ icon, label, danger = false, onPress }: { icon: IconName; label: string; danger?: boolean; onPress: () => void }) {
   const { colors } = useSettings();
@@ -71,7 +71,12 @@ export function ChatMenu({ chat }: { chat: ChatSummary }) {
   const { top } = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const close = () => setOpen(false);
+  const [shown] = useState(() => new Animated.Value(0));
+  const still = useStill();
+  const close = () =>
+    Animated.timing(shown, { toValue: 0, duration: motion.popOut, easing: ease.out, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) setOpen(false);
+    });
   const confirmDelete = () => {
     close();
     askDelete(t, chat.chatId);
@@ -82,12 +87,22 @@ export function ChatMenu({ chat }: { chat: ChatSummary }) {
       <IconButton testID="chat-menu" icon={{ ios: 'ellipsis', android: 'more_vert', web: 'more_vert' }} label={t('chat.more')}
         onPress={() => {
           Keyboard.dismiss();
+          shown.setValue(0);
           setOpen(true);
+          Animated.timing(shown, { toValue: 1, duration: motion.pop, easing: ease.out, useNativeDriver: true }).start();
         }}
       />
-      <Modal testID="chat-menu-panel" visible={open} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
+      <Modal testID="chat-menu-panel" visible={open} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
         <Pressable accessible={false} importantForAccessibility="no" onPress={close} style={StyleSheet.absoluteFill} />
-        <View accessibilityRole="menu" accessibilityViewIsModal style={[styles.menu, { top: top + headerHeight, backgroundColor: colors.surfaceContainerHigh }]}>
+        <Animated.View
+          accessibilityRole="menu"
+          accessibilityViewIsModal
+          style={[
+            styles.menu,
+            { top: top + headerHeight, backgroundColor: colors.surfaceContainerHigh, opacity: shown, transformOrigin: I18nManager.isRTL ? 'top left' : 'top right' },
+            still ? null : { transform: [{ scale: shown.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }] },
+          ]}
+        >
           <AppText variant="bodySmall" color="onSurfaceVariant" numberOfLines={1} style={styles.heading}>
             {chat.title}
           </AppText>
@@ -108,7 +123,7 @@ export function ChatMenu({ chat }: { chat: ChatSummary }) {
             }}
           />
           <Item icon={{ ios: 'trash', android: 'delete', web: 'delete' }} label={t('chat.delete')} danger onPress={confirmDelete} />
-        </View>
+        </Animated.View>
       </Modal>
       {renaming ? <RenameDialog chat={chat} onClose={() => setRenaming(false)} /> : null}
     </>
