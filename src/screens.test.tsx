@@ -265,7 +265,8 @@ describe('App', () => {
       });
       await settle();
       expect(screen.queryByLabelText('Writing')).toBeNull();
-      expect(screen.getByText('Cost $0.0042')).toBeOnTheScreen();
+      expect(screen.getByLabelText(/, Cost \$0\.0042$/)).toBeOnTheScreen();
+      expect(screen.getByRole('header', { name: 'Today' })).toBeOnTheScreen();
       expect(screen.getByRole('button', { name: 'Send' })).toBeOnTheScreen();
       await fireEvent.press(screen.getByTestId('copy-answer'));
       expect(copy).toHaveBeenCalledWith('Hi **there**');

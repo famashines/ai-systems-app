@@ -12,7 +12,7 @@ export function safeLink(href: string): string | null {
   return /^https?:\/\//i.test(href) ? href : null;
 }
 
-export function CopyButton({ text, label, testID }: { text: string; label: string; testID?: string }) {
+export function CopyButton({ text, label, testID, quiet = false }: { text: string; label: string; testID?: string; quiet?: boolean }) {
   const { t } = useSettings();
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -27,6 +27,7 @@ export function CopyButton({ text, label, testID }: { text: string; label: strin
       icon={copied ? { ios: 'checkmark', android: 'check', web: 'check' } : { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
       label={copied ? t('chat.copied') : label}
       color={copied ? 'success' : 'onSurfaceVariant'}
+      quiet={quiet}
       onPress={copy}
     />
   );
