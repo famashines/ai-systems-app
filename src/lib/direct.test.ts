@@ -1,7 +1,8 @@
 import { fetch as streamFetch } from 'expo/fetch';
 
+import { ApiError, type ServerChat, type ServerMessage } from '@/lib/api';
 import * as auth from '@/lib/auth';
-import { autoTitle, createDirectStore, history, historyMax, parseEvents, statusError, streamChat, type DirectMessage } from '@/lib/direct';
+import { autoTitle, createDirectStore, history, historyMax, parseEvents, pendingKey, statusError, streamChat, type ChatChange, type DirectMessage } from '@/lib/direct';
 
 jest.mock('expo/fetch', () => ({ fetch: jest.fn() }));
 jest.mock('@/lib/auth', () => ({ getAccessToken: jest.fn(async () => 'token-1'), refresh: jest.fn(async () => true) }));
@@ -135,6 +136,26 @@ describe('the store', () => {
     const names: { chatId: string; messages: unknown; done: (title: string | Error) => void }[] = [];
     const nameChat = (chatId: string, messages: unknown) =>
       new Promise<string>((resolve, reject) => names.push({ chatId, messages, done: (title) => (title instanceof Error ? reject(title) : resolve(title)) }));
+    const server = {
+      offline: false,
+      refuse: false,
+      gate: null as Promise<void> | null,
+      items: [] as ServerChat[],
+      pages: new Map<string, ServerMessage[]>(),
+      sent: [] as [string, string, ChatChange?][],
+    };
+    const online = () => (server.offline ? Promise.reject(new Error('offline')) : Promise.resolve());
+    const remote = {
+      list: () => online().then(() => server.items),
+      messages: (chatId: string) => online().then(() => server.pages.get(chatId) ?? []),
+      change: (chatId: string, change: ChatChange) =>
+        online().then(async () => {
+          await server.gate;
+          if (server.refuse) throw new ApiError('rejected', 0, undefined, 400);
+          server.sent.push(['change', chatId, change]);
+        }),
+      remove: (chatId: string) => online().then(() => void server.sent.push(['remove', chatId])),
+    };
     const make = () =>
       createDirectStore(
         (body, signal, delta) => new Promise((end) => calls.push({ body, signal, delta, end })),
@@ -142,8 +163,9 @@ describe('the store', () => {
         () => n,
         storage,
         nameChat,
+        remote,
       );
-    return { store: make(), calls, saved, make, names };
+    return { store: make(), calls, saved, make, names, server };
   }
   const choice = { model: 'openai/gpt-5', effort: 'high' as const };
   const flush = () => new Promise((resolve) => setTimeout(resolve, 80));
@@ -253,11 +275,11 @@ describe('the store', () => {
     expect(calls[1]!.signal.aborted).toBe(true);
     expect(store.get()).toMatchObject({ chatId: null, messages: [], history: [{ chatId: one }] });
     await flush();
-    expect([...saved.keys()].sort()).toEqual([`direct.chat.${one}`, 'direct.history']);
+    expect([...saved.keys()].sort()).toEqual([`direct.chat.${one}`, 'direct.history', pendingKey]);
     store.forget();
     await flush();
     expect(store.get().history).toEqual([]);
-    expect(saved.size).toBe(0);
+    expect([...saved.keys()]).toEqual([pendingKey]);
   });
 
   it('renames a chat, keeps the name after the next message, and puts bookmarks first', async () => {
@@ -373,6 +395,204 @@ describe('the store', () => {
     expect(store.get().history).toHaveLength(historyMax);
     expect(store.get().history[0]!.title).toBe(`Chat ${historyMax + 1}`);
     expect(saved.size).toBe(historyMax + 1);
+  });
+
+  const at = (seconds: number) => new Date(Date.UTC(2026, 10, 14, 10, 0, seconds)).toISOString();
+  const serverChat = (chatId: string, seconds: number, extra: Partial<ServerChat> = {}): ServerChat => ({ chatId, bookmarked: false, updatedAt: at(seconds), ...extra });
+
+  it('shows the cached list first, then the list of the server, and keeps chats that are only on the phone', async () => {
+    const { store, calls, server, make, saved } = setup();
+    store.send('Only here', choice);
+    calls[0]!.end({ state: 'done', costMicroUsd: 1, cut: false });
+    await flush();
+    const local = store.get().chatId!;
+    server.items = [serverChat('remote-1', 5, { title: 'From the laptop', titled: 'model', bookmarked: true })];
+    const again = make();
+    const seen: string[][] = [];
+    again.subscribe(() => seen.push(again.get().history.map((item) => item.chatId)));
+    await again.load();
+    expect(seen[0]).toEqual([local]);
+    expect(again.get().history).toMatchObject([
+      { chatId: 'remote-1', title: 'From the laptop', titled: 'model', bookmarked: true, synced: true },
+      { chatId: local, title: 'Only here' },
+    ]);
+    expect(saved.get('direct.history')).toEqual(again.get().history);
+  });
+
+  it('never drops a chat that is only on the phone to make room for chats of the server', async () => {
+    const { store, calls, server } = setup();
+    store.send('Only here', choice);
+    calls[0]!.end({ state: 'done', costMicroUsd: 1, cut: false });
+    await flush();
+    const local = store.get().chatId!;
+    server.items = Array.from({ length: historyMax }, (_, i) => serverChat(`remote-${i}`, i + 1));
+    await store.load();
+    expect(store.get().history).toHaveLength(historyMax);
+    expect(store.get().history.some((item) => item.chatId === local)).toBe(true);
+    expect(store.get().history.some((item) => item.chatId === 'remote-0')).toBe(false);
+  });
+
+  it('removes a synced chat that the server does not have any more, and keeps the list when the server fails', async () => {
+    const { store, server } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6, { title: 'Two' })];
+    await store.load();
+    expect(store.get().history.map((item) => item.chatId)).toEqual(['remote-2', 'remote-1']);
+    server.offline = true;
+    await store.load();
+    expect(store.get().history.map((item) => item.chatId)).toEqual(['remote-2', 'remote-1']);
+    server.offline = false;
+    server.items = [serverChat('remote-2', 6, { title: 'Two' })];
+    await store.load();
+    expect(store.get().history.map((item) => item.chatId)).toEqual(['remote-2']);
+  });
+
+  it('sends a delete, rename or bookmark to the server, and keeps a failed one for the next load', async () => {
+    const { store, server } = setup();
+    server.items = [serverChat('remote-1', 5, { title: 'One' }), serverChat('remote-2', 6, { title: 'Two' })];
+    await store.load();
+    store.rename('remote-2', 'Renamed');
+    store.bookmark('remote-2');
+    await flush();
+    expect(server.sent).toEqual([
+      ['change', 'remote-2', { title: 'Renamed' }],
+      ['change', 'remote-2', { bookmarked: true }],
+    ]);
+    server.offline = true;
+    store.remove('remote-1');
+    await flush();
+    expect(store.get().history.map((item) => item.chatId)).toEqual(['remote-2']);
+    expect(server.sent).toHaveLength(2);
+    await store.load();
+    expect(store.get().history.map((item) => item.chatId)).toEqual(['remote-2']);
+    server.offline = false;
+    await store.load();
+    expect(server.sent.at(-1)).toEqual(['remove', 'remote-1']);
+    expect(store.get().history.map((item) => item.chatId)).toEqual(['remote-2', 'remote-1']);
+    server.items = [serverChat('remote-2', 6, { title: 'Renamed', titled: 'owner', bookmarked: true })];
+    await store.load();
+    expect(store.get().history).toMatchObject([{ chatId: 'remote-2', title: 'Renamed', bookmarked: true }]);
+  });
+
+  it('keeps a rename and a bookmark of the phone the first time the chat is on the server, and sends them', async () => {
+    const { store, calls, server } = setup();
+    store.send('Old chat', choice);
+    calls[0]!.end({ state: 'done', costMicroUsd: 1, cut: false });
+    await flush();
+    const chatId = store.get().chatId!;
+    store.rename(chatId, 'My name');
+    store.bookmark(chatId);
+    await flush();
+    server.sent.length = 0;
+    server.items = [serverChat(chatId, 9, { title: 'Model title', titled: 'model' })];
+    await store.load();
+    await flush();
+    expect(store.get().history[0]).toMatchObject({ chatId, title: 'My name', titled: 'owner', bookmarked: true, synced: true });
+    expect(server.sent).toEqual([['change', chatId, { title: 'My name', bookmarked: true }]]);
+    server.items = [serverChat(chatId, 9, { title: 'Other device', titled: 'owner' })];
+    await store.load();
+    expect(store.get().history[0]).toMatchObject({ title: 'Other device', bookmarked: false });
+  });
+
+  it('drops a queued change that the server refuses, so later deletes still go out', async () => {
+    const { store, server } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6)];
+    await store.load();
+    server.offline = true;
+    store.rename('remote-1', 'Name');
+    store.remove('remote-2');
+    await flush();
+    server.offline = false;
+    server.refuse = true;
+    await store.load();
+    expect(server.sent).toEqual([['remove', 'remote-2']]);
+  });
+
+  it('drops a list or a chat that comes after sign-out, a new open or a new change', async () => {
+    const { store, server, saved } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6)];
+    await store.load();
+    server.pages.set('remote-1', [{ seq: 0, role: 'user', text: 'One', createdAt: at(1) }]);
+    server.pages.set('remote-2', [{ seq: 0, role: 'user', text: 'Two', createdAt: at(1) }]);
+    const first = store.open('remote-1');
+    const second = store.open('remote-2');
+    await Promise.all([first, second]);
+    expect(store.get().chatId).toBe('remote-2');
+    const loading = store.load();
+    store.forget();
+    await loading;
+    await flush();
+    expect(store.get().history).toEqual([]);
+    expect(saved.has('direct.history')).toBe(false);
+  });
+
+  it('a queued item that is sent while sign-out filters the queue does not remove a delete', async () => {
+    const { store, server, make } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6)];
+    await store.load();
+    server.offline = true;
+    store.rename('remote-1', 'Name');
+    store.remove('remote-2');
+    await flush();
+    server.offline = false;
+    let release = () => {};
+    server.gate = new Promise<void>((resolve) => (release = resolve));
+    const draining = store.load();
+    await flush();
+    store.forget();
+    release();
+    await draining;
+    server.gate = null;
+    await make().load();
+    expect(server.sent.filter(([kind]) => kind === 'remove')).toEqual([['remove', 'remote-2']]);
+  });
+
+  it('sign-out keeps only the deletes that wait for the server', async () => {
+    const { store, server, make } = setup();
+    server.items = [serverChat('remote-1', 5), serverChat('remote-2', 6)];
+    await store.load();
+    server.offline = true;
+    store.rename('remote-1', 'New name');
+    store.remove('remote-2');
+    await flush();
+    store.forget();
+    await flush();
+    server.offline = false;
+    const again = make();
+    await again.load();
+    expect(server.sent).toEqual([['remove', 'remote-2']]);
+  });
+
+  it('opens a chat from the server only when its messages load, and uses the server copy when it is not shorter', async () => {
+    const { store, calls, server } = setup();
+    server.items = [serverChat('remote-1', 5)];
+    await store.load();
+    server.offline = true;
+    await store.open('remote-1');
+    expect(store.get().chatId).toBeNull();
+    server.offline = false;
+    server.pages.set('remote-1', [
+      { seq: 0, role: 'user', text: 'Hello there', createdAt: at(1) },
+      { seq: 1, role: 'assistant', text: 'Hi', state: 'stopped', costMicroUsd: 3, createdAt: at(2) },
+    ]);
+    await store.open('remote-1');
+    expect(store.get()).toMatchObject({
+      chatId: 'remote-1',
+      messages: [
+        { id: 'remote-1:0', role: 'user', text: 'Hello there', state: 'done' },
+        { id: 'remote-1:1', role: 'assistant', text: 'Hi', state: 'stopped', costMicroUsd: 3 },
+      ],
+    });
+    expect(store.get().history[0]!.title).toBe('Hello there');
+    store.send('More', choice);
+    expect(calls[0]!.body).toMatchObject({ chatId: 'remote-1', messages: [{ content: 'Hello there' }, { content: 'Hi' }, { content: 'More' }] });
+    calls[0]!.end({ state: 'done', costMicroUsd: 1, cut: false });
+    await flush();
+    store.clear();
+    await store.open('remote-1');
+    expect(store.get().messages).toHaveLength(4);
+    server.pages.set('remote-1', [...server.pages.get('remote-1')!, { seq: 2, role: 'user', text: 'More', createdAt: at(3) }, { seq: 3, role: 'assistant', text: 'From the laptop', createdAt: at(4) }, { seq: 4, role: 'user', text: 'Next', createdAt: at(5) }]);
+    await store.open('remote-1');
+    expect(store.get().messages.map((message) => message.text)).toEqual(['Hello there', 'Hi', 'More', 'From the laptop', 'Next']);
   });
 
   it('clear stops the call and drops a late answer', async () => {

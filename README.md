@@ -152,9 +152,17 @@ app                                           api-gateway --> ai-proxy --> OpenR
   for the list, `direct.chat.<chatId>` for the messages) when you send a
   message and when an answer ends. It keeps the newest 50 chats. The side
   menu lists them under "Chats": select one to open it, the bin button
-  deletes it. Sign-out deletes all. New chat and a restart of the app
-  start an empty chat; the old chats stay in the menu. The server stores
-  no direct chat.
+  deletes it. New chat and a restart of the app start an empty chat; the
+  old chats stay in the menu.
+- Sync (docs ADR 0037): the server saves each chat after the answer, and
+  the cache is a fast copy. At login the app shows the cached list, then
+  reads `GET /api/chats` and merges it. A chat opens from the cache, then
+  the app reads `GET /api/chats/:id/messages` and uses the server copy
+  when it is not shorter. A chat that is only on the server opens only
+  when its messages load. Delete, rename and bookmark change the phone at
+  once and go to the server through a queue (`direct.pending`); a failed
+  one waits for the next login or change. Sign-out deletes the cache, and
+  keeps only the queued deletes. A failed read keeps the cached data.
 - The app sends the full chat with each message, and the chosen model and
   effort. A failed answer and an empty answer are not sent again; a
   stopped answer with text is.

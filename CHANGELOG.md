@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added (chat sync)
+
+- The chats are saved on the server (docs ADR 0037). The app shows the
+  cached chats at once, then the chats of the server. A chat from another
+  device opens when its messages load. Delete, rename and bookmark go to
+  the server; when the phone is offline they wait in a queue. Sign-out
+  deletes the copy on the phone; the chats stay on the server.
+- The privacy policy says which chat data the server keeps and how to
+  delete it.
+
 ### Added (chat)
 
 - Short chat titles written by a model (docs ADR 0036): after the first

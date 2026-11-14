@@ -3,7 +3,7 @@ import * as Crypto from 'expo-crypto';
 import { fetch as streamFetch } from 'expo/fetch';
 import { z } from 'zod';
 
-import { chatTitle } from '@/lib/api';
+import { ApiError, changeChat, chatListMax, chatMessages, chatTitle, deleteChat, listChats, type ServerChat, type ServerMessage } from '@/lib/api';
 import * as auth from '@/lib/auth';
 import * as cache from '@/lib/cache';
 import { config } from '@/lib/config';
@@ -24,12 +24,23 @@ export type DirectMessage = {
   cut?: boolean;
 };
 export type Choice = { model?: string; effort?: ReasoningEffort };
-export type ChatSummary = { chatId: string; title: string; updatedAt: number; bookmarked?: boolean; titled?: 'model' | 'owner' };
+export type ChatSummary = { chatId: string; title: string; updatedAt: number; bookmarked?: boolean; titled?: 'model' | 'owner'; synced?: boolean };
 export type NameChat = (chatId: string, messages: { role: 'user' | 'assistant'; content: string }[]) => Promise<string>;
 export type DirectChat = { chatId: string | null; messages: DirectMessage[]; busy: boolean; history: ChatSummary[] };
 export type Storage = Pick<typeof cache, 'getItem' | 'setItem' | 'removeItem'>;
+export type ChatChange = { title?: string; bookmarked?: boolean };
+export type Remote = {
+  list: () => Promise<ServerChat[]>;
+  messages: (chatId: string) => Promise<ServerMessage[]>;
+  change: (chatId: string, change: ChatChange) => Promise<void>;
+  remove: (chatId: string) => Promise<void>;
+};
+type Pending = { kind: 'delete'; chatId: string } | { kind: 'change'; chatId: string; change: ChatChange };
+
+const remote: Remote = { list: listChats, messages: chatMessages, change: changeChat, remove: deleteChat };
 
 export const historyKey = 'direct.history';
+export const pendingKey = 'direct.pending';
 export const historyMax = 50;
 export const titleMax = 80;
 export const autoTitleMax = 40;
@@ -145,12 +156,17 @@ export function createDirectStore(
   now: () => number = Date.now,
   storage: Storage = cache,
   nameChat: NameChat = chatTitle,
+  server: Remote = remote,
 ) {
   let state: DirectChat = { chatId: null, messages: [], busy: false, history: [] };
   let abort: AbortController | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<Listener>();
   const tried = new Set<string>();
+  let pending: Pending[] = [];
+  let flushing: Promise<boolean> | null = null;
+  let generation = 0;
+  let opening = 0;
 
   const emit = () => {
     if (timer) clearTimeout(timer);
@@ -181,6 +197,90 @@ export function createDirectStore(
       storage.setItem(historyKey, state.history),
       ...dropped.map((item) => storage.removeItem(chatKey(item.chatId))),
     ]).catch(() => {});
+  }
+
+  async function drain(): Promise<boolean> {
+    while (pending[0]) {
+      const op = pending[0];
+      try {
+        await (op.kind === 'delete' ? server.remove(op.chatId) : server.change(op.chatId, op.change));
+      } catch (error) {
+        if (!(error instanceof ApiError && error.kind === 'rejected')) return false;
+      }
+      pending = pending.filter((item) => item !== op);
+      await storage.setItem(pendingKey, pending).catch(() => {});
+    }
+    return true;
+  }
+
+  function flush(): Promise<boolean> {
+    flushing ??= drain().finally(() => {
+      flushing = null;
+    });
+    return flushing;
+  }
+
+  function enqueue(op: Pending) {
+    generation += 1;
+    pending = [...pending, op];
+    void storage
+      .setItem(pendingKey, pending)
+      .catch(() => {})
+      .then(flush);
+  }
+
+  function merge(remoteItems: ServerChat[]) {
+    const local = new Map(state.history.map((item) => [item.chatId, item]));
+    const seen = new Set(remoteItems.map((item) => item.chatId));
+    const oldest = remoteItems.length > 0 ? Math.min(...remoteItems.map((item) => Date.parse(item.updatedAt))) : Number.POSITIVE_INFINITY;
+    const complete = remoteItems.length < chatListMax;
+    const changes: Pending[] = [];
+    const fromServer = remoteItems.map((item): ChatSummary => {
+      const mine = local.get(item.chatId);
+      const updatedAt = Math.max(Date.parse(item.updatedAt), mine?.updatedAt ?? 0);
+      if (mine && !mine.synced) {
+        const renamed = mine.titled === 'owner' && mine.title !== item.title;
+        const bookmarked = !!mine.bookmarked && !item.bookmarked;
+        if (renamed || bookmarked) changes.push({ kind: 'change', chatId: item.chatId, change: { ...(renamed ? { title: mine.title } : {}), ...(bookmarked ? { bookmarked: true } : {}) } });
+        const titled = mine.titled === 'owner' ? 'owner' : item.titled;
+        return { chatId: item.chatId, title: mine.titled === 'owner' ? mine.title : (item.title ?? mine.title), updatedAt, bookmarked: item.bookmarked || !!mine.bookmarked, ...(titled ? { titled } : {}), synced: true };
+      }
+      return { chatId: item.chatId, title: item.title ?? mine?.title ?? '', updatedAt, bookmarked: item.bookmarked, ...(item.titled ? { titled: item.titled } : {}), synced: true };
+    });
+    const kept = state.history.filter((item) => !seen.has(item.chatId) && !(item.synced && (complete || item.updatedAt >= oldest)));
+    const all = bookmarksFirst([...bookmarksFirst(fromServer).slice(0, Math.max(0, historyMax - kept.length)), ...kept]);
+    const dropped = state.history.filter((item) => !all.some((entry) => entry.chatId === item.chatId));
+    if (state.chatId && dropped.some((item) => item.chatId === state.chatId)) {
+      abort?.abort();
+      abort = null;
+      state = { ...state, chatId: null, messages: [], busy: false };
+    }
+    set({ ...state, history: all });
+    void Promise.all([storage.setItem(historyKey, state.history), ...dropped.map((item) => storage.removeItem(chatKey(item.chatId)))]).catch(() => {});
+    for (const change of changes) enqueue(change);
+  }
+
+  async function fetchMessages(chatId: string): Promise<DirectMessage[] | null> {
+    const items = await server.messages(chatId).catch(() => null);
+    if (!items || items.length === 0) return null;
+    return items.map(
+      (item): DirectMessage => ({
+        id: `${chatId}:${item.seq}`,
+        role: item.role,
+        text: item.text,
+        createdAt: item.createdAt,
+        state: item.role === 'assistant' ? (item.state ?? 'done') : 'done',
+        ...(item.costMicroUsd === undefined ? {} : { costMicroUsd: item.costMicroUsd }),
+      }),
+    );
+  }
+
+  function adopt(chatId: string, messages: DirectMessage[]) {
+    set({ ...state, chatId, messages, busy: false });
+    const first = messages.find((message) => message.role === 'user');
+    const item = state.history.find((entry) => entry.chatId === chatId);
+    if (item && !item.title && first) edit(chatId, (entry) => ({ ...entry, title: autoTitle(first.text) }));
+    void storage.setItem(chatKey(chatId), messages).catch(() => {});
   }
 
   function edit(chatId: string, change: (item: ChatSummary) => ChatSummary) {
@@ -254,21 +354,41 @@ export function createDirectStore(
       abort?.abort();
     },
     clear() {
+      opening += 1;
       abort?.abort();
       abort = null;
       set({ ...state, chatId: null, messages: [], busy: false });
     },
     async load() {
-      const stored = await storage.getItem<ChatSummary[]>(historyKey).catch(() => null);
+      const asked = generation;
+      const [stored, queued] = await Promise.all([storage.getItem<ChatSummary[]>(historyKey).catch(() => null), storage.getItem<Pending[]>(pendingKey).catch(() => null)]);
+      if (asked !== generation) return;
       set({ ...state, history: stored?.value ?? [] });
+      if (pending.length === 0) pending = queued?.value ?? [];
+      if (!(await flush())) return;
+      const items = await server.list().catch(() => null);
+      if (items && pending.length === 0 && asked === generation) merge(items);
     },
     async open(chatId: string) {
+      const ticket = (opening += 1);
       const stored = await storage.getItem<DirectMessage[]>(chatKey(chatId)).catch(() => null);
-      if (!stored) return;
+      if (ticket !== opening) return;
+      if (!stored) {
+        if (!state.history.some((item) => item.chatId === chatId)) return;
+        const fetched = await fetchMessages(chatId);
+        if (!fetched || ticket !== opening) return;
+        abort?.abort();
+        abort = null;
+        adopt(chatId, fetched);
+        return;
+      }
       abort?.abort();
       abort = null;
-      const messages = stored.value.map((message) => (message.state === 'streaming' ? { ...message, state: 'stopped' as const } : message));
-      set({ ...state, chatId, messages, busy: false });
+      const local = stored.value.map((message) => (message.state === 'streaming' ? { ...message, state: 'stopped' as const } : message));
+      set({ ...state, chatId, messages: local, busy: false });
+      const shown = state.messages;
+      const fetched = await fetchMessages(chatId);
+      if (fetched && ticket === opening && state.chatId === chatId && state.messages === shown && fetched.length >= history(local).length) adopt(chatId, fetched);
     },
     remove(chatId: string) {
       if (state.chatId === chatId) {
@@ -278,20 +398,28 @@ export function createDirectStore(
       }
       set({ ...state, history: state.history.filter((item) => item.chatId !== chatId) });
       void Promise.all([storage.removeItem(chatKey(chatId)), storage.setItem(historyKey, state.history)]).catch(() => {});
+      enqueue({ kind: 'delete', chatId });
     },
     rename(chatId: string, title: string) {
       const trimmed = title.trim().slice(0, titleMax);
-      if (trimmed) edit(chatId, (item) => ({ ...item, title: trimmed, titled: 'owner' }));
+      if (!trimmed) return;
+      edit(chatId, (item) => ({ ...item, title: trimmed, titled: 'owner' }));
+      enqueue({ kind: 'change', chatId, change: { title: trimmed } });
     },
     bookmark(chatId: string) {
-      edit(chatId, (item) => ({ ...item, bookmarked: !item.bookmarked }));
+      const bookmarked = !state.history.find((item) => item.chatId === chatId)?.bookmarked;
+      edit(chatId, (item) => ({ ...item, bookmarked }));
+      enqueue({ kind: 'change', chatId, change: { bookmarked } });
     },
     forget() {
       const old = state.history;
       abort?.abort();
       abort = null;
+      generation += 1;
+      opening += 1;
       set({ chatId: null, messages: [], busy: false, history: [] });
-      void Promise.all([storage.removeItem(historyKey), ...old.map((item) => storage.removeItem(chatKey(item.chatId)))]).catch(() => {});
+      pending = pending.filter((op) => op.kind === 'delete');
+      void Promise.all([storage.removeItem(historyKey), storage.setItem(pendingKey, pending), ...old.map((item) => storage.removeItem(chatKey(item.chatId)))]).catch(() => {});
     },
   };
 }
