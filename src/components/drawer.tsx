@@ -4,18 +4,19 @@ import { Animated, I18nManager, Keyboard, Modal, PanResponder, Pressable, Scroll
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { askDelete } from '@/components/chat-menu';
-import { AppText, Icon, IconButton, Mark, type IconName } from '@/components/ui';
+import { AppText, Icon, IconButton, Mark, useStill, type IconName } from '@/components/ui';
 import type { Key } from '@/i18n';
 import { direct, type ChatSummary } from '@/lib/direct';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
-import { drawerWidth, headerHeight, mark, motion, radius, spacing, touchTarget } from '@/theme';
+import { drawerWidth, ease, headerHeight, mark, motion, radius, spacing, touchTarget } from '@/theme';
 
 type Section = '/budget' | '/settings';
 
 const swipeWidth = 80;
 const swipeSlop = 8;
 const swipeSpeed = 0.5;
+const swipeDrag = 4;
 let openRow: (() => void) | null = null;
 
 const sections: [Section, Key, IconName][] = [
@@ -47,12 +48,15 @@ function ChatRow({ item, selected, onOpen }: { item: ChatSummary; selected: bool
       setShown(next);
       Animated.spring(x, { toValue: next ? toward * swipeWidth : 0, useNativeDriver: true, bounciness: 0 }).start();
     };
-    const pulled = (dx: number) => Math.min(swipeWidth, Math.max(0, (open ? swipeWidth : 0) + dx * toward));
+    const pulled = (dx: number) => {
+      const raw = Math.max(0, (open ? swipeWidth : 0) + dx * toward);
+      return raw > swipeWidth ? swipeWidth + (raw - swipeWidth) / swipeDrag : raw;
+    };
     const responder = PanResponder.create({
       onMoveShouldSetPanResponder: (_event, { dx, dy }) => Math.abs(dx) > swipeSlop && Math.abs(dx) > Math.abs(dy) * 2,
       onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_event, { dx }) => x.setValue(pulled(dx) * toward),
-      onPanResponderRelease: (_event, { dx, vx }) => settle(pulled(dx) > swipeWidth / 2 || vx * toward > swipeSpeed),
+      onPanResponderRelease: (_event, { dx, vx }) => settle(Math.min(swipeWidth, pulled(dx)) > swipeWidth / 2 || vx * toward > swipeSpeed),
       onPanResponderTerminate: () => settle(open),
     });
     return { handlers: responder.panHandlers, settle, isOpen: () => open };
@@ -110,6 +114,7 @@ export function Menu() {
   const [open, setOpen] = useState(false);
   if (open && locked) setOpen(false);
   const [progress] = useState(() => new Animated.Value(0));
+  const still = useStill();
   const side = I18nManager.isRTL ? 1 : -1;
   const groups: [Key, ChatSummary[]][] = [
     ['drawer.bookmarks', chat.history.filter((item) => item.bookmarked)],
@@ -120,9 +125,12 @@ export function Menu() {
     Keyboard.dismiss();
     progress.setValue(0);
     setOpen(true);
-    Animated.timing(progress, { toValue: 1, duration: motion.open, useNativeDriver: true }).start();
+    Animated.timing(progress, { toValue: 1, duration: motion.open, easing: ease.drawer, useNativeDriver: true }).start();
   };
-  const close = () => setOpen(false);
+  const close = () =>
+    Animated.timing(progress, { toValue: 0, duration: motion.close, easing: ease.out, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) setOpen(false);
+    });
   const go = (href: '/' | Section) => {
     close();
     router.navigate(href);
@@ -139,7 +147,8 @@ export function Menu() {
           accessibilityViewIsModal
           style={[
             styles.panel,
-            { backgroundColor: colors.surface, transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [side * drawerWidth, 0] }) }] },
+            { backgroundColor: colors.surface },
+            still ? { opacity: progress } : { transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [side * drawerWidth, 0] }) }] },
           ]}
         >
           <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.fill}>

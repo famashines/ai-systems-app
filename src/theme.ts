@@ -1,4 +1,4 @@
-import type { TextStyle } from 'react-native';
+import { Easing, type TextStyle } from 'react-native';
 
 export const lightColors = {
   surface: '#F8F9FB',
@@ -48,7 +48,9 @@ export const radius = { md: 8, field: 14, full: 999 } as const;
 
 export const shadow = { composer: '0 2px 8px rgba(0, 0, 0, 0.06)', menu: '0 4px 16px rgba(0, 0, 0, 0.18)' } as const;
 
-export const motion = { fade: 160, open: 240, pulse: 900 } as const;
+export const motion = { fade: 160, open: 240, close: 180, pop: 150, popOut: 120, pulse: 900 } as const;
+
+export const ease = { out: Easing.bezier(0.23, 1, 0.32, 1), drawer: Easing.bezier(0.32, 0.72, 0, 1) } as const;
 
 export const touchTarget = 48;
 

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Changed (motion)
+
+- The side menu opens with a stronger ease-out curve and slides out when
+  it closes. With reduce motion on, it fades.
+- The model sheet slides up and down; it is as tall as its content, up
+  to 85% of the screen. A drag up has resistance; it does not bounce.
+- The chat menu grows from the three dots. The Latest button and the copy
+  check mark fade and scale in.
+- On Android, a press shows only the ripple, not a dim as well.
+- The budget fields use the 14 dp field corner.
+
+### Fixed (motion)
+
+- A second copy within 2 seconds keeps the check mark for 2 more seconds.
+
 ### Added (chat sync)
 
 - The chats are saved on the server (docs ADR 0037). The app shows the

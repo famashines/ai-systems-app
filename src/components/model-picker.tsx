@@ -1,41 +1,51 @@
 import type { ModelListItemV1, ReasoningEffort } from '@famashines/ai-systems-contracts';
 import { useState } from 'react';
-import { ActivityIndicator, Animated, Dimensions, FlatList, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, FlatList, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText, Button } from '@/components/ui';
+import { AppText, Button, useStill } from '@/components/ui';
 import type { Key } from '@/i18n';
 import type { Choice as ModelChoice } from '@/lib/api';
 import { useData } from '@/state/data';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
-import { control, motion, radius, rail, readingWidth, spacing, touchTarget, type } from '@/theme';
+import { control, ease, motion, radius, rail, readingWidth, spacing, touchTarget, type } from '@/theme';
 
 const Sheet = Animated.createAnimatedComponent(SafeAreaView);
 const closeDistance = 120;
 const closeSpeed = 0.8;
 const tapDistance = 4;
+const liftDrag = 6;
 const chipSlop = { top: (touchTarget - control.chip) / 2, bottom: (touchTarget - control.chip) / 2 };
 
-function useDragToClose(onClose: () => void) {
+function useSheet() {
+  const [open, setOpen] = useState(false);
+  const [shown] = useState(() => new Animated.Value(0));
   const [offset] = useState(() => new Animated.Value(0));
-  const [responder] = useState(() =>
-    PanResponder.create({
+  const [sheet] = useState(() => {
+    const hide = () =>
+      Animated.timing(shown, { toValue: 0, duration: motion.close, easing: ease.out, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) setOpen(false);
+      });
+    const back = () => Animated.spring(offset, { toValue: 0, bounciness: 0, useNativeDriver: true }).start();
+    const responder = PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onPanResponderMove: (_event, { dy }) => offset.setValue(Math.max(0, dy)),
-      onPanResponderTerminate: () => Animated.spring(offset, { toValue: 0, useNativeDriver: true }).start(),
+      onPanResponderMove: (_event, { dy }) => offset.setValue(dy < 0 ? Math.max(dy / liftDrag, -spacing.md) : dy),
+      onPanResponderTerminate: back,
       onPanResponderRelease: (_event, { dy, vy }) => {
-        if (dy < closeDistance && vy < closeSpeed && Math.abs(dy) >= tapDistance) {
-          Animated.spring(offset, { toValue: 0, useNativeDriver: true }).start();
-          return;
-        }
-        Animated.timing(offset, { toValue: Dimensions.get('window').height, duration: motion.open, useNativeDriver: true }).start(({ finished }) => {
-          if (finished) onClose();
-        });
+        if (dy < closeDistance && vy < closeSpeed && Math.abs(dy) >= tapDistance) return back();
+        hide();
       },
-    }),
-  );
-  return { offset, handlers: responder.panHandlers };
+    });
+    const show = () => {
+      offset.setValue(0);
+      shown.setValue(0);
+      setOpen(true);
+      Animated.timing(shown, { toValue: 1, duration: motion.open, easing: ease.drawer, useNativeDriver: true }).start();
+    };
+    return { show, hide, handlers: responder.panHandlers };
+  });
+  return { open, setOpen, shown, offset, ...sheet };
 }
 
 const effortOrder: ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -116,9 +126,10 @@ export function ModelPicker({ disabled, hidden = false }: { disabled: boolean; h
   const { t, colors, settings, update } = useSettings();
   const { models, reloadModels } = useData();
   const { locked } = useSession();
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const drag = useDragToClose(() => setOpen(false));
+  const { open, setOpen, shown: lift, offset, show: rise, hide, handlers } = useSheet();
+  const still = useStill();
+  const { height } = useWindowDimensions();
   if (open && locked) setOpen(false);
 
   const { item, choice } = choiceOf(models.items, models.loaded, settings.model, settings.effort);
@@ -131,11 +142,10 @@ export function ModelPicker({ disabled, hidden = false }: { disabled: boolean; h
   const show = () => {
     Keyboard.dismiss();
     setQuery('');
-    drag.offset.setValue(0);
-    setOpen(true);
+    rise();
     if (models.load === 'error') reloadModels();
   };
-  const close = () => setOpen(false);
+  const close = hide;
   const pick = (next: ModelListItemV1) => {
     const effort = item && settings.effort && next.efforts.includes(settings.effort) ? settings.effort : null;
     void update({ model: next.id, effort });
@@ -169,11 +179,20 @@ export function ModelPicker({ disabled, hidden = false }: { disabled: boolean; h
           ) : null}
         </Pressable>
       )}
-      <Modal testID="model-picker" visible={open && !locked} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
-        <Pressable accessible={false} importantForAccessibility="no" onPress={close} style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
+      <Modal testID="model-picker" visible={open && !locked} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={close}>
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim, opacity: lift }]} />
+        <Pressable accessible={false} importantForAccessibility="no" onPress={close} style={StyleSheet.absoluteFill} />
         <KeyboardAvoidingView behavior="padding" pointerEvents="box-none" style={styles.wrap}>
-          <Sheet testID="model-panel" accessibilityViewIsModal edges={['bottom', 'left', 'right']} style={[styles.sheet, { backgroundColor: colors.surface, transform: [{ translateY: drag.offset }] }]}>
-            <View testID="model-handle" accessible accessibilityRole="button" accessibilityLabel={t('chat.modelClose')} onAccessibilityTap={close} {...drag.handlers} style={styles.handle}>
+          <Sheet testID="model-panel" accessibilityViewIsModal edges={['bottom', 'left', 'right']} style={[
+              styles.sheet,
+              {
+                backgroundColor: colors.surface,
+                opacity: still ? lift : 1,
+                transform: [{ translateY: still ? offset : Animated.add(offset, lift.interpolate({ inputRange: [0, 1], outputRange: [height, 0] })) }],
+              },
+            ]}
+          >
+            <View testID="model-handle" accessible accessibilityRole="button" accessibilityLabel={t('chat.modelClose')} onAccessibilityTap={close} {...handlers} style={styles.handle}>
               <View style={[styles.pill, { backgroundColor: colors.outline }]} />
             </View>
             <AppText variant="title" accessibilityRole="header">
@@ -193,7 +212,7 @@ export function ModelPicker({ disabled, hidden = false }: { disabled: boolean; h
             <AppText variant="label" color="onSurfaceVariant" accessibilityRole="header">
               {t('chat.model')}
             </AppText>
-            <View accessibilityRole="radiogroup" accessibilityLabel={t('chat.model')} style={styles.fill}>
+            <View accessibilityRole="radiogroup" accessibilityLabel={t('chat.model')} style={styles.list}>
               <FlatList
                 testID="model-list"
                 keyboardShouldPersistTaps="handled"
@@ -237,14 +256,16 @@ export function ModelPicker({ disabled, hidden = false }: { disabled: boolean; h
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   wrap: { flex: 1, justifyContent: 'flex-end' },
+  list: { flexShrink: 1 },
   sheet: {
-    height: '85%',
+    maxHeight: '85%',
     width: '100%',
     maxWidth: readingWidth,
     alignSelf: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.md * 2,
+    marginBottom: -spacing.md,
     borderTopStartRadius: radius.md,
     borderTopEndRadius: radius.md,
     overflow: 'hidden',

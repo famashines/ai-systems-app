@@ -1,10 +1,10 @@
 import { lexer, type Token, type Tokens } from 'marked';
-import { memo, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Clipboard, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, Animated, Clipboard, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { AppText, IconButton } from '@/components/ui';
+import { AppText, IconButton, useStill } from '@/components/ui';
 import { useSettings } from '@/state/settings';
-import { fonts, radius, spacing, tableCell, type } from '@/theme';
+import { ease, fonts, motion, radius, spacing, tableCell, type } from '@/theme';
 
 export const copiedShowMs = 2_000;
 
@@ -15,21 +15,33 @@ export function safeLink(href: string): string | null {
 export function CopyButton({ text, label, testID, quiet = false }: { text: string; label: string; testID?: string; quiet?: boolean }) {
   const { t } = useSettings();
   const [copied, setCopied] = useState(false);
+  const [swap] = useState(() => new Animated.Value(1));
+  const still = useStill();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const change = (next: boolean) => {
+    swap.setValue(0);
+    setCopied(next);
+    Animated.timing(swap, { toValue: 1, duration: motion.pop, easing: ease.out, useNativeDriver: true }).start();
+  };
   const copy = () => {
     Clipboard.setString(text);
     AccessibilityInfo.announceForAccessibility(t('chat.copied'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), copiedShowMs);
+    clearTimeout(timer.current);
+    if (!copied) change(true);
+    timer.current = setTimeout(() => change(false), copiedShowMs);
   };
   return (
-    <IconButton
-      testID={testID}
-      icon={copied ? { ios: 'checkmark', android: 'check', web: 'check' } : { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
-      label={copied ? t('chat.copied') : label}
-      color={copied ? 'success' : 'onSurfaceVariant'}
-      quiet={quiet}
-      onPress={copy}
-    />
+    <Animated.View style={[{ opacity: swap }, still ? null : { transform: [{ scale: swap.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }] }]}>
+      <IconButton
+        testID={testID}
+        icon={copied ? { ios: 'checkmark', android: 'check', web: 'check' } : { ios: 'doc.on.doc', android: 'content_copy', web: 'content_copy' }}
+        label={copied ? t('chat.copied') : label}
+        color={copied ? 'success' : 'onSurfaceVariant'}
+        quiet={quiet}
+        onPress={copy}
+      />
+    </Animated.View>
   );
 }
 

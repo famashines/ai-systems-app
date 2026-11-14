@@ -5,13 +5,13 @@ import { ChatMenu } from '@/components/chat-menu';
 import { Menu } from '@/components/drawer';
 import { CopyButton, Markdown } from '@/components/markdown';
 import { ModelPicker, useChoice } from '@/components/model-picker';
-import { AppText, IconButton, Screen } from '@/components/ui';
+import { AppText, IconButton, Screen, useStill } from '@/components/ui';
 import { formatDay, formatTime, type Key } from '@/i18n';
 import { messageTextMax } from '@/lib/api';
 import { direct, type DirectError, type DirectMessage } from '@/lib/direct';
 import { formatUsd } from '@/lib/money';
 import { useSettings } from '@/state/settings';
-import { mark, motion, radius, shadow, spacing, touchTarget, type } from '@/theme';
+import { ease, mark, motion, radius, shadow, spacing, touchTarget, type } from '@/theme';
 
 const awayOffset = 240;
 
@@ -139,6 +139,28 @@ function Message({ message, last, day }: { message: DirectMessage; last: boolean
   );
 }
 
+function Latest({ away, onPress }: { away: boolean; onPress: () => void }) {
+  const { t } = useSettings();
+  const still = useStill();
+  const [shown] = useState(() => new Animated.Value(0));
+  const [mounted, setMounted] = useState(away);
+  if (away && !mounted) setMounted(true);
+  useEffect(() => {
+    Animated.timing(shown, { toValue: away ? 1 : 0, duration: away ? motion.pop : motion.popOut, easing: ease.out, useNativeDriver: true }).start(({ finished }) => {
+      if (finished && !away) setMounted(false);
+    });
+  }, [away, shown]);
+  if (!mounted) return null;
+  return (
+    <Animated.View
+      pointerEvents={away ? 'box-none' : 'none'}
+      style={[styles.latest, { opacity: shown }, still ? null : { transform: [{ scale: shown.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }] }]}
+    >
+      <IconButton testID="latest" filled icon={{ ios: 'arrow.down', android: 'arrow_downward', web: 'arrow_downward' }} label={t('chat.latest')} onPress={onPress} />
+    </Animated.View>
+  );
+}
+
 function Thread({ messages }: { messages: DirectMessage[] }) {
   const { t } = useSettings();
   const list = useRef<FlatList<DirectMessage>>(null);
@@ -160,17 +182,7 @@ function Thread({ messages }: { messages: DirectMessage[] }) {
         keyboardDismissMode="on-drag"
         contentContainerStyle={styles.list}
       />
-      {away ? (
-        <View style={styles.latest}>
-          <IconButton
-            testID="latest"
-            filled
-            icon={{ ios: 'arrow.down', android: 'arrow_downward', web: 'arrow_downward' }}
-            label={t('chat.latest')}
-            onPress={() => list.current?.scrollToOffset({ offset: 0, animated: true })}
-          />
-        </View>
-      ) : null}
+      <Latest away={away} onPress={() => list.current?.scrollToOffset({ offset: 0, animated: true })} />
     </View>
   );
 }
@@ -180,7 +192,7 @@ export default function Chat() {
   const chat = useSyncExternalStore(direct.subscribe, direct.get);
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
-  const [still, setStill] = useState(false);
+  const still = useStill();
   const [reader, setReader] = useState(false);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
   const choice = useChoice();
@@ -191,20 +203,17 @@ export default function Chat() {
   const title = summary?.title ?? t('chat.newChat');
 
   useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(setStill);
-    const motionSub = AccessibilityInfo.addEventListener('reduceMotionChanged', setStill);
     void AccessibilityInfo.isScreenReaderEnabled().then(setReader);
     const readerSub = AccessibilityInfo.addEventListener('screenReaderChanged', setReader);
     const keyboardSub = Keyboard.addListener('keyboardDidHide', () => input.current?.blur());
     return () => {
-      motionSub.remove();
       readerSub.remove();
       keyboardSub.remove();
     };
   }, []);
 
   const focus = (on: boolean) => {
-    if (!still && !needsModel) LayoutAnimation.configureNext(LayoutAnimation.create(motion.fade, 'easeInEaseOut', 'opacity'));
+    if (!still && !needsModel) LayoutAnimation.configureNext(LayoutAnimation.create(motion.fade, 'easeOut', 'opacity'));
     setFocused(on);
   };
   const submit = () => {
